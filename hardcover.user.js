@@ -341,9 +341,33 @@ async function extractAmazon() {
     const parts = subtitleText.split("–").map((part) => part.trim());
 
     if (parts.length === 2) {
-      data.readingFormat = parts[0];
+      // Normalize readingFormat here
+      const rawFormat = parts[0].toLowerCase();
+
+      if (rawFormat.includes("kindle") || rawFormat.includes("ebook")) {
+        data.readingFormat = "E-Book";
+        data.editionInfo = parts[0]; // preserve original format info
+      } else if (
+        rawFormat.includes("hardcover") ||
+        rawFormat.includes("paperback") ||
+        rawFormat.includes("mass market") ||
+        rawFormat.includes("large print")
+      ) {
+        data.readingFormat = "Physical Book";
+        data.editionInfo = parts[0]; // move format description here
+      } else if (rawFormat.includes("audiobook")) {
+        data.readingFormat = "Audiobook";
+        data.editionFormat = "Audible"; // default for audiobook
+        data.editionInfo = ""; // no editionInfo here for now
+      } else {
+        // Fallback: just store original
+        data.readingFormat = parts[0];
+        data.editionInfo = "";
+      }
+
       data.releaseDate = parts[1];
       logger.debug(`[extractAmazon] Reading format: ${data.readingFormat}`);
+      logger.debug(`[extractAmazon] Edition info: ${data.editionInfo}`);
       logger.debug(`[extractAmazon] Release date: ${data.releaseDate}`);
     } else {
       logger.debug(
