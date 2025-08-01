@@ -1,0 +1,965 @@
+// ==UserScript==
+// @name         Hardcover Librarian Tampermonkey
+// @namespace    https://github.com/kyle-mckay/hardcover-librarian-tampermonkey
+// @updateURL    https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/hardcover.user.js
+// @downloadURL  https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/hardcover.user.js
+// @author       kyle-mckay
+// @version      1.0.0
+// @description  Extract book metadata from supported sites like Goodreads and optionally inject into sites like Hardcovers.app for easier book creation.
+// @match        https://www.goodreads.com/*
+// @match        https://hardcover.app/*
+// @icon         https://assets.hardcover.app/static/favicon.ico
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_addStyle
+// @grant        GM_registerMenuCommand
+// ==/UserScript==
+
+const LogLevel = {
+  ERROR: 0,
+  WARN: 1,
+  INFO: 2,
+  DEBUG: 3,
+};
+
+let currentLogLevel = LogLevel.INFO; // Change this to control global verbosity
+let bubbleRefresh = 2000; // The number of miliseconds the bubble refreshes the URL. Allows buttons to show/hide dynamically during normal navigation.
+
+// #region Universal helpers
+
+function createLogger(fnName) {
+  return {
+    error: (msg, ...args) => log(LogLevel.ERROR, `[${fnName}] ${msg}`, ...args),
+    warn: (msg, ...args) => log(LogLevel.WARN, `[${fnName}] ${msg}`, ...args),
+    info: (msg, ...args) => log(LogLevel.INFO, `[${fnName}] ${msg}`, ...args),
+    debug: (msg, ...args) => log(LogLevel.DEBUG, `[${fnName}] ${msg}`, ...args),
+  };
+}
+
+function log(level, ...args) {
+  if (level <= currentLogLevel) {
+    switch (level) {
+      case LogLevel.ERROR:
+        console.error("[ERROR]", ...args);
+        break;
+      case LogLevel.WARN:
+        console.warn("[WARN]", ...args);
+        break;
+      case LogLevel.INFO:
+        console.info("[ℹINFO]", ...args);
+        break;
+      case LogLevel.DEBUG:
+        console.debug("[DEBUG]", ...args);
+        break;
+    }
+  }
+}
+
+const bookSchema = {
+  title: "",
+  subtitle: "",
+  isbn10: "",
+  isbn13: "",
+  asin: "",
+  cover: "", // Image URL or base64 if downloaded
+  authors: [],
+  contributors: [],
+  publisher: "",
+  readingFormat: "", // Physical Book, Audiobook, E-Book
+  editionFormat: "", // Hardcover, Paperback, Kindle
+  editionInfo: "", // Reprint, Large Print, etc.
+  releaseDate: "",
+  releaseLanguage: "",
+  releaseCountry: "",
+};
+
+function addPreviewPanel() {
+  const logger = createLogger("addPreviewPanel");
+
+  let data;
+  try {
+    data = loadBookData();
+  } catch (err) {
+    logger.error("Failed to load book data:", err);
+    return;
+  }
+
+  if (!data || Object.keys(data).length === 0 || !data.title) {
+    logger.warn("No valid book data to display:", data);
+    return;
+  }
+
+  if (document.getElementById("bookPreviewPanel")) {
+    logger.debug("Preview panel already exists.");
+    return;
+  }
+
+  const panel = document.createElement("div");
+  panel.id = "bookPreviewPanel";
+  Object.assign(panel.style, {
+    position: "fixed",
+    bottom: "10px",
+    left: "10px",
+    width: "600px",
+    maxHeight: "400px",
+    background: "#fdfdfd",
+    border: "1px solid #888",
+    borderRadius: "8px",
+    boxShadow: "0 4px 10px rgba(0, 0, 0, 0.2)",
+    padding: "12px",
+    fontFamily: "monospace",
+    fontSize: "11px",
+    overflowY: "auto",
+    zIndex: 99999,
+    display: "flex",
+    gap: "12px",
+  });
+
+  const closeBtn = document.createElement("button");
+  closeBtn.innerText = "✖";
+  Object.assign(closeBtn.style, {
+    position: "absolute",
+    top: "8px",
+    right: "8px",
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
+    fontSize: "14px",
+  });
+  closeBtn.title = "Close";
+  closeBtn.onclick = () => {
+    logger.debug("Preview panel closed.");
+    panel.remove();
+  };
+
+  // Left pane: JSON preview excluding cover image
+  const jsonPreview = document.createElement("pre");
+  Object.assign(jsonPreview.style, {
+    flex: "1",
+    background: "#eee",
+    padding: "6px",
+    borderRadius: "6px",
+    maxHeight: "380px",
+    overflowY: "auto",
+    whiteSpace: "pre-wrap",
+  });
+  const dataClone = { ...data };
+  delete dataClone.cover; // exclude cover URL from JSON preview
+  jsonPreview.textContent = JSON.stringify(dataClone, null, 2);
+
+  // Right pane: cover image + download link
+  const rightPane = document.createElement("div");
+  Object.assign(rightPane.style, {
+    width: "150px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "6px",
+  });
+
+  if (data.cover) {
+    const link = document.createElement("a");
+    link.href = data.cover;
+    link.target = "_blank";
+    link.title = "Open cover image in new tab";
+    link.style.display = "block";
+    link.style.width = "100%";
+
+    const img = document.createElement("img");
+    img.src = data.cover;
+    img.alt = data.title || "Cover Image";
+    img.style.width = "100%";
+    img.style.borderRadius = "6px";
+    img.style.cursor = "pointer";
+
+    link.appendChild(img);
+    rightPane.appendChild(link);
+
+    const downloadLink = document.createElement("a");
+    downloadLink.href = data.cover;
+    downloadLink.download = ""; // filename from URL
+    downloadLink.textContent = "⬇️ Download Cover";
+    Object.assign(downloadLink.style, {
+      color: "#0055aa",
+      textDecoration: "underline",
+      cursor: "pointer",
+      fontSize: "12px",
+      userSelect: "none",
+    });
+
+    rightPane.appendChild(downloadLink);
+  }
+
+  panel.appendChild(closeBtn);
+  panel.appendChild(jsonPreview);
+  panel.appendChild(rightPane);
+  document.body.appendChild(panel);
+  logger.debug("Preview panel injected.");
+}
+
+function saveBookData(data) {
+  const logger = createLogger("saveBookData");
+
+  if (!data) {
+    logger.warn("No data provided to save.");
+    return;
+  }
+
+  try {
+    const jsonData = JSON.stringify(data);
+    logger.debug("Serialized data:", jsonData);
+    GM_setValue("bookData", jsonData);
+    logger.info("Book data saved successfully.");
+  } catch (error) {
+    logger.error("Failed to save book data:", error);
+  }
+}
+
+function loadBookData() {
+  const logger = createLogger("loadBookData");
+  try {
+    const rawData = GM_getValue("bookData", "{}");
+    logger.debug("Raw stored data:", rawData);
+    const bookData = JSON.parse(rawData);
+    logger.info("Book data loaded successfully.");
+    return bookData;
+  } catch (error) {
+    logger.error("Failed to load or parse book data:", error);
+    return {}; // Return empty object on failure to avoid breaking code
+  }
+}
+
+// #endregion
+
+// #region Import (Read) Book data
+
+const siteModules = {
+  "www.goodreads.com": {
+    detect() {
+      const logger = createLogger("siteModules.goodreads.detect");
+      logger.debug("Running detection on www.goodreads.com");
+
+      const found =
+        document.querySelector('h1[data-testid="bookTitle"]') !== null;
+      logger.debug(`Detection result: ${found}`);
+
+      return found;
+    },
+    extract() {
+      const logger = createLogger("siteModules.goodreads.extract");
+      logger.debug("Calling extractGoodreads()");
+
+      const result = extractGoodreads();
+      logger.debug("extractGoodreads() returned:", result);
+
+      return result;
+    },
+  },
+  // add other site modules here
+};
+
+async function extractGoodreads() {
+  const logger = createLogger("extractGoodreads");
+  logger.debug("Invoked extractGoodreads()");
+
+  const data = {
+    title: "",
+    subtitle: "",
+    isbn10: "",
+    isbn13: "",
+    asin: "",
+    cover: "",
+    authors: [],
+    contributors: [],
+    publisher: "",
+    readingFormat: "",
+    editionFormat: "",
+    releaseDate: "",
+    releaseLanguage: "",
+    releaseCountry: "",
+    description: "",
+    seriesName: "",
+    seriesNumber: "",
+    pageCount: null,
+  };
+
+  // Expand "...more" contributors if present
+  const moreContributorsBtn = document.querySelector(
+    ".ContributorLinksList .Button__labelItem"
+  );
+  if (
+    moreContributorsBtn &&
+    moreContributorsBtn.textContent.trim() === "...more"
+  ) {
+    moreContributorsBtn.click();
+    logger.debug('Clicked "...more" contributor button');
+
+    // Wait 500ms for contributors to load after clicking
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  // Cover image
+  const coverEl =
+    document.querySelector(".BookCover__image img.ResponsiveImage")?.src ||
+    null;
+  data.cover = coverEl;
+  logger.debug("Extracted cover:", coverEl);
+
+  // Title
+  const titleEl = document.querySelector('h1[data-testid="bookTitle"]');
+  data.title = titleEl?.textContent.trim() || "";
+  logger.debug("Extracted title:", data.title);
+
+  // Authors (initial set)
+  data.authors = Array.from(
+    document.querySelectorAll('span[itemprop="name"]')
+  ).map((el) => el.textContent.trim());
+  logger.debug("Initial authors extracted:", data.authors);
+
+  // Description
+  const descEl = document.querySelector(
+    'div[data-testid="description"] span.Formatted'
+  );
+  data.description = descEl?.textContent.trim() || "";
+  logger.debug("Extracted description:", data.description);
+
+  // Series
+  const seriesAnchor = document.querySelector('h3[aria-label*="series"] a');
+  if (seriesAnchor) {
+    const fullText = seriesAnchor.textContent.trim();
+    const match = fullText.match(/^(.*)\s*#([\d.]+)$/);
+    if (match) {
+      data.seriesName = match[1];
+      data.seriesNumber = match[2];
+    } else {
+      data.seriesName = fullText;
+      data.seriesNumber = "";
+    }
+    logger.debug("Extracted series:", {
+      name: data.seriesName,
+      number: data.seriesNumber,
+    });
+  }
+
+  // author/contributor lists
+  const authorsSet = new Set();
+  const contributorsSet = new Set();
+  const authors = [];
+  const contributors = [];
+
+  const container = document.querySelector(".ContributorLinksList");
+  if (container) {
+    // Select all spans with tabindex="-1" inside the container (at any depth)
+    const allSpans = container.querySelectorAll("span[tabindex='-1']");
+
+    allSpans.forEach((span) => {
+      // For each span, get all ContributorLink anchors inside it
+      span.querySelectorAll("a.ContributorLink").forEach((link) => {
+        const nameEl = link.querySelector(".ContributorLink__name");
+        const roleEl = link.querySelector(".ContributorLink__role");
+
+        const name = nameEl?.textContent.trim() || "";
+        const role =
+          roleEl?.textContent.trim().replace(/[()\u00A0]/g, "") || "";
+
+        // Avoid duplicates by combining name and role for contributors
+        if (role) {
+          const key = `${name}|${role}`;
+          if (!contributorsSet.has(key)) {
+            contributors.push({ name, role });
+            contributorsSet.add(key);
+          }
+        } else {
+          if (!authorsSet.has(name)) {
+            authors.push(name);
+            authorsSet.add(name);
+          }
+        }
+      });
+    });
+  }
+
+  data.authors = authors;
+  data.contributors = contributors;
+  logger.debug("Final authors:", authors);
+  logger.debug("Contributors:", contributors);
+
+  // Edition details
+  const editionDetails = document.querySelector(".EditionDetails");
+  if (editionDetails) {
+    const items = editionDetails.querySelectorAll(".DescListItem");
+    items.forEach((item) => {
+      const label =
+        item.querySelector("dt")?.textContent.trim().toLowerCase() || "";
+      const value = item.querySelector("dd")?.textContent.trim() || "";
+
+      switch (label) {
+        case "format": {
+          const parts = value.split(",");
+          if (parts.length === 1) {
+            data.editionFormat = parts[0].trim();
+            data.pageCount = null;
+          } else {
+            const pagesMatch = parts[0].match(/\d+/);
+            data.pageCount = pagesMatch ? parseInt(pagesMatch[0], 10) : null;
+            data.editionFormat = parts[1].trim();
+          }
+          logger.debug("Extracted format:", {
+            editionFormat: data.editionFormat,
+            pageCount: data.pageCount,
+          });
+          break;
+        }
+
+        case "published": {
+          data.releaseDate = value.split(" by ")[0].trim();
+          const byIndex = value.toLowerCase().indexOf(" by ");
+          if (byIndex !== -1) {
+            data.publisher = value.substring(byIndex + 4).trim();
+          }
+          logger.debug("Extracted published date & publisher:", {
+            releaseDate: data.releaseDate,
+            publisher: data.publisher,
+          });
+          break;
+        }
+
+        case "isbn": {
+          const cleaned = value.trim();
+          const isbnMatch = cleaned.match(
+            /(\d{13})(?:\s*\(ISBN10:\s*(\d{10})\))?/i
+          );
+          if (isbnMatch) {
+            data.isbn13 = isbnMatch[1];
+            if (isbnMatch[2]) {
+              data.isbn10 = isbnMatch[2];
+            }
+          } else {
+            const digits = cleaned.replace(/\D/g, "");
+            if (digits.length === 13) data.isbn13 = digits;
+            else if (digits.length === 10) data.isbn10 = digits;
+          }
+          logger.debug("Extracted ISBNs:", {
+            isbn13: data.isbn13,
+            isbn10: data.isbn10,
+          });
+          break;
+        }
+
+        case "asin": {
+          data.asin = value.trim();
+          logger.debug("Extracted ASIN:", data.asin);
+          break;
+        }
+
+        case "language": {
+          data.releaseLanguage = value;
+          logger.debug("Extracted language:", data.releaseLanguage);
+          break;
+        }
+      }
+    });
+  }
+
+  logger.debug("Returning data object:", data);
+  return data;
+}
+
+// #endregion
+
+// #region Hardcover
+
+function isHardcoverImportPage() {
+  const logger = createLogger("isHardcoverImportPage");
+  const url = location.href;
+  const regex =
+    /^https:\/\/hardcover\.app\/books\/([^/]+\/)?(editions\/[^/]+\/)?edit$|^https:\/\/hardcover\.app\/books\/new_manual$/;
+
+  logger.debug("Testing url: ", url);
+  const result = regex.test(url);
+  logger.debug("Results: ", result);
+  return result;
+}
+
+function importBookDataToHardcover(data) {
+  const logger = createLogger("importBookDataToHardcover");
+  logger.debug("Called with data:", data); // Value was passed in
+
+  if (!data) {
+    logger.warn("No data provided, exiting early.");
+    return;
+  }
+
+  // Local helper to populate input fields and trigger reactive updates
+  const setInputValue = (id, value) => {
+    const el = document.getElementById(id);
+    if (el && typeof value === "string") {
+      el.value = value;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      logger.debug(`Set input '${id}' to:`, value);
+    } else {
+      logger.debug(
+        `Skipped '${id}' — element not found or value not a string.`
+      );
+    }
+  };
+
+  // Setting form field values using data input
+  setInputValue("field-title", data.title || "");
+  setInputValue("field-subtitle", data.subtitle || "");
+  setInputValue("field-isbn-10", data.isbn10 || "");
+  setInputValue("field-isbn-13", data.isbn13 || "");
+  setInputValue("field-asin", data.asin || "");
+
+  logger.info("Finished populating form fields.");
+}
+
+// #endregion
+
+// #region Main
+
+(function () {
+  "use strict";
+
+  // Create logger for this module
+  const logger = createLogger("floatingBubble");
+
+  // Store last url
+  let lastUrl = location.href;
+
+  /**
+   * Creates a floating bubble container in the bottom-right corner
+   * with a clickable header to toggle content visibility.
+   * Returns references to the bubble container and content area.
+   */
+  function createFloatingBubble() {
+    logger.debug("Creating floating bubble UI");
+
+    const bubble = document.createElement("div");
+    bubble.id = "floatingBubble";
+    Object.assign(bubble.style, {
+      position: "fixed",
+      bottom: "20px",
+      right: "20px",
+      width: "600px",
+      background: "#fff",
+      border: "1px solid #888",
+      borderRadius: "10px",
+      boxShadow: "0 4px 10px rgba(0,0,0,0.2)",
+      zIndex: 99999,
+      fontFamily: "sans-serif",
+      fontSize: "14px",
+      color: "#222",
+      userSelect: "none",
+      overflow: "hidden",
+      transition: "height 0.3s ease",
+      height: "40px", // start collapsed
+    });
+
+    // Header bar with toggle functionality and icon
+    const header = document.createElement("div");
+    header.style.cssText = `
+    background: #0055aa;
+    color: #fff;
+    padding: 8px;
+    cursor: pointer;
+    font-weight: bold;
+    user-select: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  `;
+    header.textContent = "Book Metadata";
+
+    const toggleIcon = document.createElement("span");
+    toggleIcon.textContent = "▼"; // down arrow for collapsed
+    toggleIcon.style.transition = "transform 0.3s ease";
+    header.appendChild(toggleIcon);
+
+    bubble.appendChild(header);
+
+    // Content container hidden by default (collapsed)
+    const content = document.createElement("div");
+    content.id = "floatingBubbleContent";
+    Object.assign(content.style, {
+      padding: "8px",
+      display: "none",
+      maxHeight: "350px",
+      overflowY: "auto",
+      display: "flex",
+      gap: "12px",
+      flexWrap: "nowrap",
+      alignItems: "flex-start",
+    });
+
+    bubble.appendChild(content);
+
+    header.onclick = () => {
+      if (content.style.display === "none") {
+        content.style.display = "flex";
+        bubble.style.height = "auto";
+        toggleIcon.style.transform = "rotate(180deg)"; // arrow points up
+        logger.debug("Bubble expanded");
+      } else {
+        content.style.display = "none";
+        bubble.style.height = "40px";
+        toggleIcon.style.transform = "rotate(0deg)"; // arrow points down
+        logger.debug("Bubble collapsed");
+      }
+    };
+
+    document.body.appendChild(bubble);
+
+    logger.info("Floating bubble added to DOM");
+
+    return { bubble, content, header };
+  }
+
+  /**
+   * Checks if the current page is a Hardcover import page.
+   * Re-uses your existing isHardcoverImportPage() function or equivalent.
+   */
+  function isHardcoverImportPage() {
+    const url = location.href;
+    const regex =
+      /^https:\/\/hardcover\.app\/books\/([^/]+\/)?(editions\/[^/]+\/)?edit$|^https:\/\/hardcover\.app\/books\/new_manual$/;
+    return regex.test(url);
+  }
+
+  /**
+   * Main initialization of floating bubble UI and button setup.
+   * Decides which buttons to show based on site and saved data.
+   */
+  async function initFloatingBubble() {
+    logger.info("Initializing floating bubble");
+
+    const host = location.hostname;
+    const module = siteModules[host];
+    const isImportPage = isHardcoverImportPage();
+
+    let savedData = loadBookData();
+    let hasSavedData = savedData && Object.keys(savedData).length > 0;
+    logger.debug("Saved book data found:", hasSavedData);
+
+    const { bubble, content } = createFloatingBubble();
+
+    // Message container for temporary messages
+    let messageEl = content.querySelector("#floatingBubbleMessage");
+    if (!messageEl) {
+      messageEl = document.createElement("div");
+      messageEl.id = "floatingBubbleMessage";
+      Object.assign(messageEl.style, {
+        marginBottom: "8px",
+        color: "#007700",
+        fontWeight: "bold",
+        minHeight: "18px",
+        transition: "opacity 0.3s ease",
+        opacity: "0",
+        userSelect: "none",
+      });
+      content.insertBefore(messageEl, content.firstChild);
+    }
+
+    function showTemporaryMessage(msg, duration = 3000) {
+      messageEl.textContent = msg;
+      messageEl.style.opacity = "1";
+
+      clearTimeout(showTemporaryMessage.timeoutId);
+      showTemporaryMessage.timeoutId = setTimeout(() => {
+        messageEl.style.opacity = "0";
+        setTimeout(() => {
+          messageEl.textContent = "";
+        }, 300);
+      }, duration);
+    }
+
+    const btnContainer = document.createElement("div");
+    btnContainer.style.marginBottom = "8px";
+
+    if (module && module.detect()) {
+      logger.debug("Extraction module detected for host:", host);
+
+      const extractBtn = document.createElement("button");
+      extractBtn.textContent = "📚 Extract Book Data";
+      extractBtn.style.marginRight = "8px";
+
+      extractBtn.onclick = async () => {
+        logger.info("Extract button clicked");
+        const data = await module.extract();
+        logger.debug("Extracted data:", data);
+        saveBookData(data);
+        updateContent(data);
+        showTemporaryMessage("Book data extracted and saved.");
+        copyJsonBtn.disabled = false; // enable copy button
+      };
+
+      btnContainer.appendChild(extractBtn);
+    }
+
+    if (isImportPage) {
+      logger.debug("Hardcover import page detected");
+
+      const importBtn = document.createElement("button");
+      importBtn.textContent = "⬇️ Import Book Data";
+      importBtn.style.marginRight = "8px";
+
+      importBtn.onclick = async () => {
+        logger.info("Import button clicked");
+        const data = loadBookData();
+        if (!data || Object.keys(data).length === 0) {
+          showTemporaryMessage(
+            "No book data found. Please extract book data first."
+          );
+          logger.warn("Import attempted with no saved book data");
+          return;
+        }
+        importBookDataToHardcover(data);
+        showTemporaryMessage("Book data imported!");
+        logger.info("Book data imported into Hardcover");
+      };
+
+      btnContainer.appendChild(importBtn);
+    }
+
+    // Copy JSON button
+    const copyJsonBtn = document.createElement("button");
+    copyJsonBtn.textContent = "📋 Copy JSON";
+    copyJsonBtn.disabled = !hasSavedData;
+    copyJsonBtn.style.marginRight = "8px";
+    copyJsonBtn.onclick = () => {
+      try {
+        const jsonStr = JSON.stringify(loadBookData(), null, 2);
+        navigator.clipboard.writeText(jsonStr).then(() => {
+          showTemporaryMessage("Book JSON copied to clipboard.");
+        });
+      } catch (e) {
+        showTemporaryMessage("Failed to copy JSON.");
+        logger.error("Copy JSON failed:", e);
+      }
+    };
+    btnContainer.appendChild(copyJsonBtn);
+
+    // Refresh button
+    const refreshBtn = document.createElement("button");
+    refreshBtn.textContent = "🔄 Refresh";
+    refreshBtn.onclick = () => {
+      const refreshedData = loadBookData();
+      if (refreshedData && Object.keys(refreshedData).length > 0) {
+        updateContent(refreshedData);
+        copyJsonBtn.disabled = false;
+        showTemporaryMessage("Book data refreshed.");
+        logger.info("Book data refreshed via button");
+      } else {
+        updateContent({});
+        copyJsonBtn.disabled = true;
+        showTemporaryMessage("No book data found.");
+        logger.info("No book data on refresh");
+      }
+    };
+    btnContainer.appendChild(refreshBtn);
+
+    content.appendChild(btnContainer);
+
+    if (hasSavedData) {
+      updateContent(savedData);
+      content.style.display = "block";
+      bubble.style.height = "auto";
+      logger.info("Displaying saved book data in bubble on load");
+    }
+
+    // Detect URL changes to reload content from storage
+    let lastUrl = location.href;
+    new MutationObserver(() => {
+      if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        const newData = loadBookData();
+        if (newData && Object.keys(newData).length > 0) {
+          updateContent(newData);
+          copyJsonBtn.disabled = false;
+          logger.info("Content preview updated on URL change");
+        }
+      }
+    }).observe(document, { subtree: true, childList: true });
+
+    function updateContent(data) {
+      logger.debug("Updating bubble content preview");
+
+      // Remove previous flex container with text + image if present
+      const oldFlexContainer = content.querySelector(
+        ".floatingBubbleFlexContainer"
+      );
+      if (oldFlexContainer) oldFlexContainer.remove();
+
+      // Container to hold formatted text and image side by side
+      const flexContainer = document.createElement("div");
+      flexContainer.className = "floatingBubbleFlexContainer";
+      Object.assign(flexContainer.style, {
+        display: "flex",
+        gap: "12px",
+        alignItems: "flex-start",
+        maxHeight: "250px",
+        overflow: "hidden",
+      });
+
+      // Left pane: formatted text container
+      const textContainer = document.createElement("div");
+      Object.assign(textContainer.style, {
+        flex: "1",
+        background: "#eee",
+        padding: "6px",
+        borderRadius: "6px",
+        maxHeight: "250px",
+        overflowY: "auto",
+        fontFamily: "monospace",
+        fontSize: "12px",
+        userSelect: "none",
+      });
+
+      // Helper to capitalize field names prettily
+      const prettify = (str) =>
+        str
+          .replace(/([A-Z])/g, " $1") // split camelCase
+          .replace(/^./, (c) => c.toUpperCase()) // capitalize first letter
+          .trim();
+
+      // Iterate fields except cover
+      Object.entries(data).forEach(([key, value]) => {
+        if (!value) return; // skip empty or falsy
+
+        // For arrays, join values with commas
+        if (Array.isArray(value)) {
+          if (key === "contributors") {
+            value = value.map((c) => `${c.name} (${c.role})`).join(", ");
+          } else {
+            value = value.join(", ");
+          }
+          if (!value) return;
+        }
+
+        const fieldDiv = document.createElement("div");
+        fieldDiv.style.marginBottom = "4px";
+
+        const labelSpan = document.createElement("span");
+        labelSpan.textContent = `${prettify(key)}: `;
+        labelSpan.style.fontWeight = "bold";
+
+        const valueSpan = document.createElement("span");
+        valueSpan.textContent = value;
+        valueSpan.style.cursor = "pointer";
+        valueSpan.style.color = "#0055aa";
+        valueSpan.style.textDecoration = "underline";
+        valueSpan.title = "Click to copy";
+
+        valueSpan.onclick = () => {
+          navigator.clipboard.writeText(value).then(() => {
+            logger.info(`Copied "${key}" to clipboard.`);
+            showTemporaryMessage(`Copied ${prettify(key)} to clipboard`);
+          });
+        };
+
+        fieldDiv.appendChild(labelSpan);
+        fieldDiv.appendChild(valueSpan);
+        textContainer.appendChild(fieldDiv);
+      });
+
+      flexContainer.appendChild(textContainer);
+
+      // Right pane: image container, same as before
+      if (data.cover) {
+        const imgContainer = document.createElement("div");
+        imgContainer.id = "imgContainer";
+        Object.assign(imgContainer.style, {
+          width: "150px",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: "6px",
+          overflow: "hidden",
+        });
+
+        const link = document.createElement("a");
+        link.href = data.cover;
+        link.target = "_blank";
+        link.title = "Open cover image in new tab";
+        link.style.display = "block";
+        link.style.width = "100%";
+
+        const img = document.createElement("img");
+        img.src = data.cover;
+        img.alt = data.title || "Cover Image";
+        img.style.width = "100%";
+        img.style.borderRadius = "6px";
+        img.style.cursor = "pointer";
+
+        link.appendChild(img);
+        imgContainer.appendChild(link);
+
+        const downloadLink = document.createElement("a");
+        downloadLink.href = "#";
+        downloadLink.textContent = "⬇️ Download Cover";
+        Object.assign(downloadLink.style, {
+          color: "#0055aa",
+          textDecoration: "underline",
+          cursor: "pointer",
+          fontSize: "12px",
+          userSelect: "none",
+        });
+
+        downloadLink.onclick = async (e) => {
+          e.preventDefault();
+          try {
+            const response = await fetch(data.cover, { mode: "cors" });
+            if (!response.ok) throw new Error("Network response was not ok");
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+
+            const filename =
+              data.cover.split("/").pop().split("?")[0] || "cover.jpg";
+            a.download = filename;
+
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+          } catch (err) {
+            alert("Failed to download image.");
+            logger.error("Image download failed:", err);
+          }
+        };
+
+        imgContainer.appendChild(downloadLink);
+
+        flexContainer.appendChild(imgContainer);
+      }
+
+      content.appendChild(flexContainer);
+    }
+  }
+
+  /**
+   * Checks to see if the page has changed by normal navigation
+   * update bubble dynamically
+   */
+  async function checkUrlChange() {
+    if (location.href !== lastUrl) {
+      lastUrl = location.href;
+      logger.info("URL changed, reinitializing floating bubble.");
+      // Remove existing bubble if any
+      const existingBubble = document.getElementById("floatingBubble");
+      if (existingBubble) existingBubble.remove();
+      // Re-run init
+      await initFloatingBubble();
+    }
+  }
+
+  // Run initialization immediately
+  initFloatingBubble();
+
+  // Poll for URL changes every 2000ms (adjust interval as needed)
+  setInterval(checkUrlChange, bubbleRefresh);
+})();
+
+// #endregion
