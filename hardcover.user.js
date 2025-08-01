@@ -495,17 +495,27 @@ function importBookDataToHardcover(data) {
   // Local helper to populate input `id` labelled fields and trigger reactive updates
   const setInputId = (id, value) => {
     logger.debug(`Setting input Id for field '${id}' to: `, value);
+
     const el = document.getElementById(id);
-    if (el && typeof value === "string") {
-      el.value = value;
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-      logger.debug(`Set input '${id}' to:`, value);
-    } else {
+    if (!el || typeof value !== "string") {
       logger.debug(
         `Skipped '${id}' - element not found or value not a string.`
       );
+      return;
     }
+
+    // Use native setter to trigger framework reactivity
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value"
+    )?.set;
+
+    nativeInputValueSetter?.call(el, value);
+
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+
+    logger.debug(`Set input '${id}' to:`, value);
   };
 
   // Local helper to populate input fields by visible <label> text and trigger reactive updates
@@ -545,7 +555,11 @@ function importBookDataToHardcover(data) {
     }
 
     // Set value and trigger reactive input/change events
-    input.value = stringValue;
+    const setter = Object.getOwnPropertyDescriptor(
+      input.__proto__,
+      "value"
+    )?.set;
+    setter?.call(input, stringValue);
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
 
