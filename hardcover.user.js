@@ -4,15 +4,17 @@
 // @updateURL    https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/hardcover.user.js
 // @downloadURL  https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/hardcover.user.js
 // @author       kyle-mckay
-// @version      1.0.0
+// @version      1.1.0
 // @description  Extract book metadata from supported sites like Goodreads and optionally inject into sites like Hardcovers.app for easier book creation.
 // @match        https://www.goodreads.com/*
 // @match        https://hardcover.app/*
+// @match        https://audible.ca/*
 // @icon         https://assets.hardcover.app/static/favicon.ico
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
+// @license      MIT
 // ==/UserScript==
 
 const LogLevel = {
@@ -490,8 +492,9 @@ function importBookDataToHardcover(data) {
     return;
   }
 
-  // Local helper to populate input fields and trigger reactive updates
-  const setInputValue = (id, value) => {
+  // Local helper to populate input `id` labelled fields and trigger reactive updates
+  const setInputId = (id, value) => {
+    logger.debug(`Setting input Id for field '${id}' to: `, value);
     const el = document.getElementById(id);
     if (el && typeof value === "string") {
       el.value = value;
@@ -500,18 +503,65 @@ function importBookDataToHardcover(data) {
       logger.debug(`Set input '${id}' to:`, value);
     } else {
       logger.debug(
-        `Skipped '${id}' — element not found or value not a string.`
+        `Skipped '${id}' - element not found or value not a string.`
       );
     }
   };
 
-  // Setting form field values using data input
-  setInputValue("field-title", data.title || "");
-  setInputValue("field-subtitle", data.subtitle || "");
-  setInputValue("field-isbn-10", data.isbn10 || "");
-  setInputValue("field-isbn-13", data.isbn13 || "");
-  setInputValue("field-asin", data.asin || "");
+  // Local helper to populate input fields by visible <label> text and trigger reactive updates
+  const setInputLabel = (labelText, value) => {
+    logger.debug(`Setting input for '${labelText}' to:`, value);
 
+    // Accept string or number values, convert number to string for input
+    if (typeof value !== "string" && typeof value !== "number") {
+      logger.debug(`Skipped '${labelText}' - value not a string or number`);
+      return;
+    }
+    const stringValue = String(value);
+
+    // Find label with exact trimmed text
+    const labels = Array.from(document.querySelectorAll("label"));
+    const label = labels.find((l) => l.textContent.trim() === labelText);
+
+    if (!label) {
+      logger.debug(`Label '${labelText}' not found`);
+      return;
+    }
+
+    // Closest container with class 'border-t' that holds label and input/textarea
+    const container = label.closest("div.border-t");
+
+    if (!container) {
+      logger.debug(`Container for label '${labelText}' not found`);
+      return;
+    }
+
+    // Look for input or textarea inside container
+    const input = container.querySelector("input, textarea");
+
+    if (!input) {
+      logger.debug(`Input or textarea for label '${labelText}' not found`);
+      return;
+    }
+
+    // Set value and trigger reactive input/change events
+    input.value = stringValue;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+
+    logger.debug(`Set input for '${labelText}' to:`, stringValue);
+  };
+
+  // Setting form field values using data input
+  setInputId("field-title", data.title || "");
+  setInputId("field-subtitle", data.subtitle || "");
+  setInputId("field-isbn-10", data.isbn10 || "");
+  setInputId("field-isbn-13", data.isbn13 || "");
+  setInputId("field-asin", data.asin || "");
+  setInputId("field-edition-format", data.editionFormat || "");
+
+  setInputLabel("Description", data.description || "");
+  setInputLabel("Page Count", data.pageCount);
   logger.info("Finished populating form fields.");
 }
 
