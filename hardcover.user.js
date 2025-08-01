@@ -292,7 +292,7 @@ const siteModules = {
       return result;
     },
   },
-  "amazon": {
+  amazon: {
     detect() {
       const logger = createLogger("siteModules.amazon.detect");
       logger.debug("Running detection on amazon");
@@ -730,16 +730,58 @@ async function extractGoodreads() {
       switch (label) {
         case "format": {
           const parts = value.split(",");
-          if (parts.length === 1) {
-            data.editionFormat = parts[0].trim();
-            data.pageCount = null;
+          const rawFormat =
+            parts.length === 1 ? parts[0].trim() : parts[1].trim();
+          const pageMatch = parts[0].match(/\d+/);
+          data.pageCount = pageMatch ? parseInt(pageMatch[0], 10) : null;
+
+          // --- Normalize format ---
+          const formatMap = {
+            "audible audio": {
+              readingFormat: "Audiobook",
+              editionInfo: "Audible",
+              editionFormat: "",
+            },
+            "audio cd": {
+              readingFormat: "Audiobook",
+              editionInfo: "CD",
+              editionFormat: "",
+            },
+            "kindle edition": {
+              readingFormat: "E-Book",
+              editionInfo: "Kindle",
+              editionFormat: "",
+            },
+            ebook: {
+              readingFormat: "E-Book",
+              editionInfo: "",
+              editionFormat: "",
+            },
+            paperback: {
+              readingFormat: "Physical Book",
+              editionInfo: "Paperback",
+              editionFormat: "",
+            },
+            hardcover: {
+              readingFormat: "Physical Book",
+              editionInfo: "Hardcover",
+              editionFormat: "",
+            },
+          };
+
+          const normalized = formatMap[rawFormat.toLowerCase()];
+          if (normalized) {
+            data.readingFormat = normalized.readingFormat;
+            data.editionInfo = normalized.editionInfo;
+            data.editionFormat = normalized.editionFormat || undefined;
           } else {
-            const pagesMatch = parts[0].match(/\d+/);
-            data.pageCount = pagesMatch ? parseInt(pagesMatch[0], 10) : null;
-            data.editionFormat = parts[1].trim();
+            data.editionFormat = rawFormat;
           }
+
           logger.debug("Extracted format:", {
             editionFormat: data.editionFormat,
+            readingFormat: data.readingFormat,
+            editionInfo: data.editionInfo,
             pageCount: data.pageCount,
           });
           break;
