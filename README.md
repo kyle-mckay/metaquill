@@ -35,7 +35,7 @@ Install this userscript with a userscript manager like Tampermonkey or Greasemon
 
 ## Screenshots
 
-### Screenshot 1 - Extracted Metadata
+### Extracted Metadata
 
 ![Goodreads with no prior extraction data](/images/goodreads-nodata.jpg)
 
@@ -55,7 +55,7 @@ Text can be copied from the bubble to paste in the ISBN
 
 ![Hardcover new manual imported](/images/hardcover-new-imported.jpg)
 
-### Screenshot 3 - Debug Log Output
+### Debug Log Output
 
 With `let currentLogLevel = LogLevel.DEBUG;`
 
