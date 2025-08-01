@@ -27,7 +27,8 @@ This userscript is designed to extract detailed book metadata from supported web
 
 >Each source to have its own module
 
-- [goodreads](https://www.goodreads.com)
+- goodreads
+- amazon (.ca/.com/.uk/etc)
 
 ## Usage
 
