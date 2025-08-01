@@ -4,15 +4,19 @@
 // @updateURL    https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/hardcover.user.js
 // @downloadURL  https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/hardcover.user.js
 // @author       kyle-mckay
-// @version      1.0.0
+// @version      1.2.0
 // @description  Extract book metadata from supported sites like Goodreads and optionally inject into sites like Hardcovers.app for easier book creation.
 // @match        https://www.goodreads.com/*
 // @match        https://hardcover.app/*
+// @match        https://audible.ca/*
+// @include /^https:\/\/(www\.)?amazon\.[a-z.]+\/dp\/[A-Z0-9]{10}(?:[/?].*)?$/
+// @include /^https:\/\/(www\.)?amazon\.[a-z.]+\/[^\/]+\/dp\/[A-Z0-9]{10}(?:[/?].*)?$/
 // @icon         https://assets.hardcover.app/static/favicon.ico
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
+// @license      MIT
 // ==/UserScript==
 
 const LogLevel = {
@@ -22,7 +26,7 @@ const LogLevel = {
   DEBUG: 3,
 };
 
-let currentLogLevel = LogLevel.INFO; // Change this to control global verbosity
+let currentLogLevel = LogLevel.DEBUG; // Change this to control global verbosity
 let bubbleRefresh = 2000; // The number of miliseconds the bubble refreshes the URL. Allows buttons to show/hide dynamically during normal navigation.
 
 // #region Universal helpers
@@ -56,21 +60,32 @@ function log(level, ...args) {
 }
 
 const bookSchema = {
+  sourceId: "", // The source ID from the extracted site (Goodreads, Amazon, Gooble Books, ex)
   title: "",
   subtitle: "",
+  urlSlug: "",
+  headline: "", // Description headline field
+  literaryType: "", // Fiction, Non-Fiction or 'Unknown or Not Applicable'
+  bookCategory: "", // Book, Novella, Short Story, Graphic Novel, Fan Fiction, Research Paper, Poetry, Collection, Web Novel, Light Novel
+  compilation: false, // If it is a compilation of other books
+  seriesName: "",
+  seriesNumber: "",
   isbn10: "",
   isbn13: "",
   asin: "",
-  cover: "", // Image URL or base64 if downloaded
-  authors: [],
-  contributors: [],
+  cover: "", // Image URL
+  authors: [], // Array of authors
+  contributors: [], // Array of contributors and their role
   publisher: "",
   readingFormat: "", // Physical Book, Audiobook, E-Book
+  pageCount: null,
+  audiobookDuration: [], // Hours, Minutes, Seconds
   editionFormat: "", // Hardcover, Paperback, Kindle
   editionInfo: "", // Reprint, Large Print, etc.
   releaseDate: "",
   releaseLanguage: "",
   releaseCountry: "",
+  description: "", // Multi text book description
 };
 
 function addPreviewPanel() {
@@ -229,12 +244,34 @@ function loadBookData() {
   }
 }
 
+function htmlToTextWithLineBreaks(htmlElement) {
+  if (!htmlElement) return "";
+
+  // Clone the element so we don't modify the original DOM
+  const clone = htmlElement.cloneNode(true);
+
+  // Replace <br> with newline characters
+  clone.querySelectorAll("br").forEach((br) => {
+    br.replaceWith("\n");
+  });
+
+  // Replace <p> with newlines before and after
+  clone.querySelectorAll("p").forEach((p) => {
+    const text = p.textContent.trim();
+    const textWithBreaks = "\n" + text + "\n";
+    p.replaceWith(textWithBreaks);
+  });
+
+  // Get the cleaned text
+  return clone.textContent.trim();
+}
+
 // #endregion
 
 // #region Import (Read) Book data
 
 const siteModules = {
-  "www.goodreads.com": {
+  "goodreads.com": {
     detect() {
       const logger = createLogger("siteModules.goodreads.detect");
       logger.debug("Running detection on www.goodreads.com");
@@ -255,33 +292,354 @@ const siteModules = {
       return result;
     },
   },
+  amazon: {
+    detect() {
+      const logger = createLogger("siteModules.amazon.detect");
+      logger.debug("Running detection on amazon");
+
+      const found = Boolean(document.querySelector("#productTitle"));
+      logger.debug(`Detection result: ${found}`);
+
+      return found;
+    },
+    extract() {
+      const logger = createLogger("siteModules.amazon.extract");
+      logger.debug("Calling extractAmazon()");
+
+      const result = extractAmazon();
+      logger.debug("extractAmazon() returned:", result);
+
+      return result;
+    },
+  },
   // add other site modules here
 };
+
+async function extractAmazon() {
+  const logger = createLogger("extractAmazon");
+  logger.debug("Invoked extractAmazon()");
+
+  const data = bookSchema;
+
+  // --- Basic title, subtitle, reading format, edition info ---
+  const titleEl = document.querySelector("#productTitle");
+  const subtitleEl = document.querySelector("#productSubtitle");
+  const bindingEl = document.querySelector("#productBinding");
+  const versionEl = document.querySelector("#productVersion");
+
+  if (titleEl) {
+    data.title = titleEl.textContent.trim();
+    logger.debug(`[extractAmazon] Title extracted: ${data.title}`);
+  } else {
+    logger.debug("[extractAmazon] Title element not found");
+  }
+
+  if (subtitleEl) {
+    const subtitleText = subtitleEl.textContent.trim();
+    logger.debug(`[extractAmazon] Subtitle extracted: ${subtitleText}`);
+
+    const parts = subtitleText.split("–").map((part) => part.trim());
+
+    if (parts.length === 2) {
+      // Normalize readingFormat here
+      const rawFormat = parts[0].toLowerCase();
+
+      if (rawFormat.includes("kindle") || rawFormat.includes("ebook")) {
+        data.readingFormat = "E-Book";
+        data.editionInfo = parts[0]; // preserve original format info
+      } else if (
+        rawFormat.includes("hardcover") ||
+        rawFormat.includes("paperback") ||
+        rawFormat.includes("mass market") ||
+        rawFormat.includes("large print")
+      ) {
+        data.readingFormat = "Physical Book";
+        data.editionInfo = parts[0]; // move format description here
+      } else if (rawFormat.includes("audiobook")) {
+        data.readingFormat = "Audiobook";
+        data.editionFormat = "Audible"; // default for audiobook
+        data.editionInfo = ""; // no editionInfo here for now
+      } else {
+        // Fallback: just store original
+        data.readingFormat = parts[0];
+        data.editionInfo = "";
+      }
+
+      data.releaseDate = parts[1];
+      logger.debug(`[extractAmazon] Reading format: ${data.readingFormat}`);
+      logger.debug(`[extractAmazon] Edition info: ${data.editionInfo}`);
+      logger.debug(`[extractAmazon] Release date: ${data.releaseDate}`);
+    } else {
+      logger.debug(
+        '[extractAmazon] Subtitle does not contain expected format with "–"'
+      );
+    }
+  } else if (bindingEl) {
+    // Audiobook fallback
+    const bindingText = bindingEl.textContent.trim();
+    let versionText = versionEl ? versionEl.textContent.trim() : "";
+    versionText = versionText.replace(/^–+\s*/, "");
+
+    data.readingFormat = "Audiobook";
+    data.editionFormat = "Audible";
+    data.editionInfo = versionText || "";
+
+    logger.debug(
+      `[extractAmazon] Reading format set to: ${data.readingFormat}`
+    );
+    logger.debug(
+      `[extractAmazon] Edition format set to: ${data.editionFormat}`
+    );
+    logger.debug(`[extractAmazon] Edition info set to: ${data.editionInfo}`);
+
+    data.releaseDate = "";
+  } else {
+    logger.debug("[extractAmazon] Subtitle and audiobook elements not found");
+  }
+
+  // Extract description
+
+  const descriptionContainer = document.querySelector(
+    "#bookDescription_feature_div .a-expander-content"
+  );
+  if (descriptionContainer) {
+    data.description = htmlToTextWithLineBreaks(descriptionContainer);
+    logger.debug("[extractAmazon] Description extracted with line breaks.");
+  } else {
+    logger.debug("[extractAmazon] Description element not found.");
+  }
+
+  // Extract Cover
+  const coverImgEl = document.getElementById("landingImage");
+  if (coverImgEl) {
+    data.cover = coverImgEl.src || "";
+    logger.debug(`[extractAmazon] Cover image URL extracted: ${data.cover}`);
+  } else {
+    logger.debug("[extractAmazon] Cover image element not found");
+  }
+
+  // --- Extract authors, contributors, publisher from byline ---
+  logger.debug("Extracting authors, contributors, and publisher");
+
+  const bylineSpans = document.querySelectorAll("#bylineInfo .author");
+  const authorsSet = new Set();
+  const contributors = [];
+  let publisherName = "";
+
+  bylineSpans.forEach((span) => {
+    const name = span.querySelector("a")?.textContent?.trim();
+    const roleRaw = span
+      .querySelector(".contribution .a-color-secondary")
+      ?.textContent?.trim();
+    if (!name || !roleRaw) return;
+
+    // Clean and normalize roles, split by commas or spaces
+    const roles = roleRaw
+      .replace(/[()]/g, "")
+      .split(/[,\s]+/)
+      .filter(Boolean)
+      .map((r) => r.toLowerCase());
+
+    // Add to authors if any role is 'author'
+    if (roles.includes("author")) {
+      authorsSet.add(name);
+    }
+
+    if (roles.includes("publisher")) {
+      publisherName = name;
+    } else {
+      // For contributors, exclude 'author' role if already an author
+      const contributorRoles = roles.filter((r) => r !== "author");
+
+      if (contributorRoles.length > 0) {
+        const roleDisplay = contributorRoles
+          .map((r) => r.charAt(0).toUpperCase() + r.slice(1))
+          .join(" ");
+        contributors.push({
+          name,
+          role: roleDisplay,
+        });
+      }
+    }
+  });
+
+  data.authors = Array.from(authorsSet);
+  data.contributors = contributors;
+  data.publisher = publisherName;
+
+  logger.debug(`Authors parsed: ${JSON.stringify(data.authors)}`);
+  logger.debug(`Contributors parsed: ${JSON.stringify(data.contributors)}`);
+  logger.debug(`Publisher parsed: ${data.publisher}`);
+
+  // --- Determine where to parse product details based on readingFormat ---
+  const readingFormatLower = (data.readingFormat || "").toLowerCase();
+
+  if (
+    readingFormatLower.includes("audiobook") ||
+    readingFormatLower === "audiobook"
+  ) {
+    // Parse Audible product details table
+    const audibleDetailsTable = document.querySelector(
+      "#audibleProductDetails table.a-keyvalue"
+    );
+
+    if (audibleDetailsTable) {
+      const rows = audibleDetailsTable.querySelectorAll("tr");
+      rows.forEach((row) => {
+        const header =
+          row.querySelector("th")?.textContent?.trim().toLowerCase() || "";
+        const valueEl = row.querySelector("td");
+        const valueText = valueEl?.textContent?.trim() || "";
+
+        switch (header) {
+          case "part of series":
+            data.seriesName = valueText;
+            logger.debug(`[extractAmazon] Series name: ${data.seriesName}`);
+            break;
+
+          case "listening length":
+            // Parse duration into hours, minutes, seconds
+            const durationParts =
+              valueText
+                .toLowerCase()
+                .match(/\d+\s*hours?|\d+\s*minutes?|\d+\s*seconds?/g) || [];
+            let durationObj = { hours: 0, minutes: 0, seconds: 0 };
+            durationParts.forEach((part) => {
+              if (part.includes("hour"))
+                durationObj.hours = parseInt(part, 10) || 0;
+              else if (part.includes("minute"))
+                durationObj.minutes = parseInt(part, 10) || 0;
+              else if (part.includes("second"))
+                durationObj.seconds = parseInt(part, 10) || 0;
+            });
+            data.audiobookDuration = [durationObj];
+            logger.debug(
+              `[extractAmazon] Audiobook duration: ${JSON.stringify(
+                durationObj
+              )}`
+            );
+            break;
+
+          case "audible.com release date":
+            data.releaseDate = valueText;
+            logger.debug(
+              `[extractAmazon] Release date (Audible): ${data.releaseDate}`
+            );
+            break;
+
+          case "publisher":
+            data.publisher = valueText;
+            logger.debug(`[extractAmazon] Publisher: ${data.publisher}`);
+            break;
+
+          case "program type":
+            data.readingFormat = valueText;
+            logger.debug(
+              `[extractAmazon] Reading format (Program Type): ${data.readingFormat}`
+            );
+            break;
+
+          case "version":
+            data.editionInfo = valueText.replace(/^–+\s*/, "");
+            logger.debug(`[extractAmazon] Edition info: ${data.editionInfo}`);
+            break;
+
+          case "language":
+            data.releaseLanguage = valueText;
+            logger.debug(
+              `[extractAmazon] Release language: ${data.releaseLanguage}`
+            );
+            break;
+
+          case "asin":
+            data.asin = valueText;
+            logger.debug(`[extractAmazon] ASIN: ${data.asin}`);
+            break;
+        }
+      });
+    } else {
+      logger.debug("[extractAmazon] Audible product details table not found");
+    }
+  } else {
+    // Regular books - parse detail bullets
+    const detailBulletsList = document.querySelector(
+      "#detailBullets_feature_div ul.detail-bullet-list"
+    );
+
+    if (detailBulletsList) {
+      const items = detailBulletsList.querySelectorAll("li");
+      items.forEach((li) => {
+        const labelEl = li.querySelector("span.a-text-bold");
+        const valueEl = labelEl ? labelEl.nextElementSibling : null;
+        if (!labelEl || !valueEl) return;
+
+        let label = labelEl.textContent || "";
+        label = label
+          .replace(/[‏:\u200E\u200F]/g, "")
+          .trim()
+          .toLowerCase();
+        const value = valueEl.textContent.trim();
+
+        logger.debug(
+          `[extractAmazon] Detail bullet label: "${label}", value: "${value}"`
+        );
+
+        switch (label) {
+          case "publisher":
+            if (!data.publisher) data.publisher = value;
+            logger.debug(`[extractAmazon] Publisher: ${data.publisher}`);
+            break;
+
+          case "publication date":
+            data.releaseDate = value;
+            logger.debug(`[extractAmazon] Release date: ${data.releaseDate}`);
+            break;
+
+          case "language":
+            data.releaseLanguage = value;
+            logger.debug(
+              `[extractAmazon] Release language: ${data.releaseLanguage}`
+            );
+            break;
+
+          case "print length":
+            const pageCountMatch = value.match(/\d+/);
+            if (pageCountMatch) {
+              data.pageCount = parseInt(pageCountMatch[0], 10);
+              logger.debug(`[extractAmazon] Page count: ${data.pageCount}`);
+            }
+            break;
+
+          case "isbn-10":
+            data.isbn10 = value.replace(/-/g, "");
+            logger.debug(`[extractAmazon] ISBN-10: ${data.isbn10}`);
+            break;
+
+          case "isbn-13":
+            data.isbn13 = value.replace(/-/g, "");
+            logger.debug(`[extractAmazon] ISBN-13: ${data.isbn13}`);
+            break;
+
+          case "part of series":
+            data.seriesName = value;
+            logger.debug(`[extractAmazon] Series name: ${data.seriesName}`);
+            break;
+        }
+      });
+    } else {
+      logger.debug("[extractAmazon] Detail bullets list not found");
+    }
+  }
+
+  logger.debug("Final extracted Amazon data:", data);
+  return data;
+}
 
 async function extractGoodreads() {
   const logger = createLogger("extractGoodreads");
   logger.debug("Invoked extractGoodreads()");
 
-  const data = {
-    title: "",
-    subtitle: "",
-    isbn10: "",
-    isbn13: "",
-    asin: "",
-    cover: "",
-    authors: [],
-    contributors: [],
-    publisher: "",
-    readingFormat: "",
-    editionFormat: "",
-    releaseDate: "",
-    releaseLanguage: "",
-    releaseCountry: "",
-    description: "",
-    seriesName: "",
-    seriesNumber: "",
-    pageCount: null,
-  };
+  const data = bookSchema;
 
   // Expand "...more" contributors if present
   const moreContributorsBtn = document.querySelector(
@@ -396,16 +754,58 @@ async function extractGoodreads() {
       switch (label) {
         case "format": {
           const parts = value.split(",");
-          if (parts.length === 1) {
-            data.editionFormat = parts[0].trim();
-            data.pageCount = null;
+          const rawFormat =
+            parts.length === 1 ? parts[0].trim() : parts[1].trim();
+          const pageMatch = parts[0].match(/\d+/);
+          data.pageCount = pageMatch ? parseInt(pageMatch[0], 10) : null;
+
+          // --- Normalize format ---
+          const formatMap = {
+            "audible audio": {
+              readingFormat: "Audiobook",
+              editionInfo: "Audible",
+              editionFormat: "",
+            },
+            "audio cd": {
+              readingFormat: "Audiobook",
+              editionInfo: "CD",
+              editionFormat: "",
+            },
+            "kindle edition": {
+              readingFormat: "E-Book",
+              editionInfo: "Kindle",
+              editionFormat: "",
+            },
+            ebook: {
+              readingFormat: "E-Book",
+              editionInfo: "",
+              editionFormat: "",
+            },
+            paperback: {
+              readingFormat: "Physical Book",
+              editionInfo: "Paperback",
+              editionFormat: "",
+            },
+            hardcover: {
+              readingFormat: "Physical Book",
+              editionInfo: "Hardcover",
+              editionFormat: "",
+            },
+          };
+
+          const normalized = formatMap[rawFormat.toLowerCase()];
+          if (normalized) {
+            data.readingFormat = normalized.readingFormat;
+            data.editionInfo = normalized.editionInfo;
+            data.editionFormat = normalized.editionFormat || undefined;
           } else {
-            const pagesMatch = parts[0].match(/\d+/);
-            data.pageCount = pagesMatch ? parseInt(pagesMatch[0], 10) : null;
-            data.editionFormat = parts[1].trim();
+            data.editionFormat = rawFormat;
           }
+
           logger.debug("Extracted format:", {
             editionFormat: data.editionFormat,
+            readingFormat: data.readingFormat,
+            editionInfo: data.editionInfo,
             pageCount: data.pageCount,
           });
           break;
@@ -490,28 +890,91 @@ function importBookDataToHardcover(data) {
     return;
   }
 
-  // Local helper to populate input fields and trigger reactive updates
-  const setInputValue = (id, value) => {
+  // Local helper to populate input `id` labelled fields and trigger reactive updates
+  const setInputId = (id, value) => {
+    logger.debug(`Setting input Id for field '${id}' to: `, value);
+
     const el = document.getElementById(id);
-    if (el && typeof value === "string") {
-      el.value = value;
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-      logger.debug(`Set input '${id}' to:`, value);
-    } else {
+    if (!el || typeof value !== "string") {
       logger.debug(
-        `Skipped '${id}' — element not found or value not a string.`
+        `Skipped '${id}' - element not found or value not a string.`
       );
+      return;
     }
+
+    // Use native setter to trigger framework reactivity
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value"
+    )?.set;
+
+    nativeInputValueSetter?.call(el, value);
+
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+
+    logger.debug(`Set input '${id}' to:`, value);
+  };
+
+  // Local helper to populate input fields by visible <label> text and trigger reactive updates
+  const setInputLabel = (labelText, value) => {
+    logger.debug(`Setting input for '${labelText}' to:`, value);
+
+    // Accept string or number values, convert number to string for input
+    if (typeof value !== "string" && typeof value !== "number") {
+      logger.debug(`Skipped '${labelText}' - value not a string or number`);
+      return;
+    }
+    const stringValue = String(value);
+
+    // Find label with exact trimmed text
+    const labels = Array.from(document.querySelectorAll("label"));
+    const label = labels.find((l) => l.textContent.trim() === labelText);
+
+    if (!label) {
+      logger.debug(`Label '${labelText}' not found`);
+      return;
+    }
+
+    // Closest container with class 'border-t' that holds label and input/textarea
+    const container = label.closest("div.border-t");
+
+    if (!container) {
+      logger.debug(`Container for label '${labelText}' not found`);
+      return;
+    }
+
+    // Look for input or textarea inside container
+    const input = container.querySelector("input, textarea");
+
+    if (!input) {
+      logger.debug(`Input or textarea for label '${labelText}' not found`);
+      return;
+    }
+
+    // Set value and trigger reactive input/change events
+    const setter = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(input),
+      "value"
+    )?.set;
+
+    setter?.call(input, stringValue);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+
+    logger.debug(`Set input for '${labelText}' to:`, stringValue);
   };
 
   // Setting form field values using data input
-  setInputValue("field-title", data.title || "");
-  setInputValue("field-subtitle", data.subtitle || "");
-  setInputValue("field-isbn-10", data.isbn10 || "");
-  setInputValue("field-isbn-13", data.isbn13 || "");
-  setInputValue("field-asin", data.asin || "");
+  setInputId("field-title", data.title || "");
+  setInputId("field-subtitle", data.subtitle || "");
+  setInputId("field-isbn-10", data.isbn10 || "");
+  setInputId("field-isbn-13", data.isbn13 || "");
+  setInputId("field-asin", data.asin || "");
+  setInputId("field-edition-format", data.editionFormat || "");
 
+  setInputLabel("Description", data.description || "");
+  setInputLabel("Page Count", data.pageCount);
   logger.info("Finished populating form fields.");
 }
 
@@ -634,8 +1097,16 @@ function importBookDataToHardcover(data) {
   async function initFloatingBubble() {
     logger.info("Initializing floating bubble");
 
-    const host = location.hostname;
-    const module = siteModules[host];
+    const rawHost = location.hostname.toLowerCase(); // e.g., "www.website.ca"
+    logger.debug(`rawHost: '${rawHost}`);
+    const host = rawHost.replace(/^www\./, ""); // "website.ca"
+
+    // Normalize Amazon host to shared key
+    const normalizedHost = host.includes("amazon.") ? "amazon" : host;
+    logger.debug(`normalizedHost: '${normalizedHost}`);
+
+    const module = siteModules[normalizedHost];
+
     const isImportPage = isHardcoverImportPage();
 
     let savedData = loadBookData();
@@ -827,8 +1298,23 @@ function importBookDataToHardcover(data) {
       Object.entries(data).forEach(([key, value]) => {
         if (!value) return; // skip empty or falsy
 
-        // For arrays, join values with commas
-        if (Array.isArray(value)) {
+        // Custom formatting for audiobookDuration array
+        if (
+          key === "audiobookDuration" &&
+          Array.isArray(value) &&
+          value.length > 0
+        ) {
+          const dur = value[0]; // assuming one duration object
+          const parts = [];
+          if (dur.hours)
+            parts.push(`${dur.hours} hour${dur.hours !== 1 ? "s" : ""}`);
+          if (dur.minutes)
+            parts.push(`${dur.minutes} minute${dur.minutes !== 1 ? "s" : ""}`);
+          if (dur.seconds)
+            parts.push(`${dur.seconds} second${dur.seconds !== 1 ? "s" : ""}`);
+          value = parts.join(", ");
+          if (!value) return;
+        } else if (Array.isArray(value)) {
           if (key === "contributors") {
             value = value.map((c) => `${c.name} (${c.role})`).join(", ");
           } else {
