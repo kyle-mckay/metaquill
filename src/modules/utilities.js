@@ -14,16 +14,6 @@
  * log(level, ...args): Internal function routing logs to console based on level and currentLogLevel.
  */
 
-const LogLevel = {
-  ERROR: 0,
-  WARN: 1,
-  INFO: 2,
-  DEBUG: 3,
-};
-
-let currentLogLevel = LogLevel.DEBUG; // Change this to control global verbosity
-let bubbleRefresh = 2000; // The number of miliseconds the bubble refreshes the URL. Allows buttons to show/hide dynamically during normal navigation.
-
 function createLogger(fnName) {
   return {
     error: (msg, ...args) => log(LogLevel.ERROR, `[${fnName}] ${msg}`, ...args),

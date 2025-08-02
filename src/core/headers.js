@@ -19,3 +19,13 @@
 // @license      MIT
 // ==/UserScript==
 
+const LogLevel = {
+  ERROR: 0,
+  WARN: 1,
+  INFO: 2,
+  DEBUG: 3,
+};
+
+let currentLogLevel = LogLevel.INFO; // Change this to control global verbosity
+let bubbleRefresh = 2000; // The number of miliseconds the bubble refreshes the URL. Allows buttons to show/hide dynamically during normal navigation.
+

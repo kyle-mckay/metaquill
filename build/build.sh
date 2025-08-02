@@ -25,8 +25,13 @@ fi
 version=$(<"$version_file")
 version="${version//[$'\r\n']}"
 
-# Replace version in @version line in header file
+# Replace log level from DEBUG to INFO in public release
+sed -i.bak -E 's|(let currentLogLevel = LogLevel\.)DEBUG;|\1INFO;|' "$header_file"
+
+# Replace version in @version line in header file with release draft version number
 sed -i.bak -E "s|^(\\s*//\\s*@version\\s+)[^ ]+|\1$version|" "$header_file"
+
+# Clean up backup
 rm -f "${header_file}.bak"
 
 mapfile -t files < "$build_list_file"
@@ -38,7 +43,6 @@ for f in "${files[@]}"; do
     exit 1
   fi
 
-  # Remove all trailing newlines and append exactly two newlines
   tmp=$(mktemp)
   awk 'BEGIN{RS="";ORS="\n\n"} {gsub(/\n+$/, ""); print}' "$f" > "$tmp"
   mv "$tmp" "$f"
