@@ -38,9 +38,9 @@ Install this userscript with a userscript manager like Tampermonkey or Greasemon
 
 ### Extracted Metadata
 
-![Goodreads with no prior extraction data](/images/goodreads-nodata.jpg)
+![Goodreads with no prior extraction data](/assets/images/goodreads-nodata.jpg)
 
-![Goodreads with after extraction](/images/goodreads-extracted.jpg)
+![Goodreads with after extraction](/assets/images/goodreads-extracted.jpg)
 
 ### Hardcover
 
@@ -48,19 +48,19 @@ Install this userscript with a userscript manager like Tampermonkey or Greasemon
 
 Text can be copied from the bubble to paste in the ISBN
 
-![Hardcover new book autofill page](/images/hardcover-preview.jpg)
+![Hardcover new book autofill page](/assets/images/hardcover-preview.jpg)
 
 ### New Book (Manual)
 
-![Hardcover new manual importable](/images/hardcover-new-importable.jpg)
+![Hardcover new manual importable](/assets/images/hardcover-new-importable.jpg)
 
-![Hardcover new manual imported](/images/hardcover-new-imported.jpg)
+![Hardcover new manual imported](/assets/images/hardcover-new-imported.jpg)
 
 ### Debug Log Output
 
 With `let currentLogLevel = LogLevel.DEBUG;`
 
-![Console logs](/images/console-log.jpg)
+![Console logs](/assets/images/console-log.jpg)
 
 ## Installation
 

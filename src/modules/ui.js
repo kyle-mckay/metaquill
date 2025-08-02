@@ -1,3 +1,24 @@
+// ===== SECTION: User Interface Components =====
+// ===== FILE PATH: src/modules/ui.js ==========
+
+/**
+ * UI component function to add a floating preview panel ("bubble") to the page.
+ *
+ * This panel displays stored book metadata in a JSON formatted view on the left,
+ * and shows the book cover image with a clickable link and download option on the right.
+ *
+ * Key behaviors:
+ * - Loads book data from persistent storage.
+ * - Skips rendering if no valid data or panel already exists.
+ * - Creates a fixed-position panel anchored to bottom-left of viewport.
+ * - Includes a close button to remove the panel.
+ * - Uses monospace font and styled containers for readability.
+ * - Excludes the cover URL from JSON preview to reduce clutter.
+ * - The cover image opens in a new tab when clicked.
+ * - A download link below the cover triggers a save of the image.
+ * - All style and DOM creation is done programmatically.
+ * - Uses logging to track loading, error, and lifecycle events.
+ */
 function addPreviewPanel() {
   const logger = createLogger("addPreviewPanel");
 
@@ -121,3 +142,4 @@ function addPreviewPanel() {
   document.body.appendChild(panel);
   logger.debug("Preview panel injected.");
 }
+

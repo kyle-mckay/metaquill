@@ -19,6 +19,22 @@
 // @license      MIT
 // ==/UserScript==
 
+// ===== SECTION: Utilities and Functions =====
+// ===== FILE PATH: src/modules/utilities.js ==========
+
+/**
+ * Logging utility with configurable verbosity levels and named loggers.
+ *
+ * LogLevel enum defines severity levels: ERROR (0), WARN (1), INFO (2), DEBUG (3).
+ * currentLogLevel controls the global log output verbosity.
+ * bubbleRefresh sets refresh interval for UI bubbles (not related to logging).
+ *
+ * createLogger(fnName): Returns a logger object scoped to the given function/module name.
+ * Each logger method prepends the fnName to the message for clear context.
+ *
+ * log(level, ...args): Internal function routing logs to console based on level and currentLogLevel.
+ */
+
 const LogLevel = {
   ERROR: 0,
   WARN: 1,
@@ -57,8 +73,13 @@ function log(level, ...args) {
   }
 }
 
+/**
+ * Schema definition object representing the structure of extracted book metadata.
+ * Fields include identifiers, descriptive info, contributors, publication details, and more.
+ * This serves as the standardized data container for book extraction results.
+ */
 const bookSchema = {
-  sourceId: "", // The source ID from the extracted site (Goodreads, Amazon, Gooble Books, ex)
+  sourceId: "", // The source ID from the extracted site (Goodreads, Amazon, Google Books, etc.)
   title: "",
   subtitle: "",
   urlSlug: "",
@@ -86,6 +107,11 @@ const bookSchema = {
   description: "", // Multi text book description
 };
 
+/**
+ * Saves the given book data object to persistent storage using GM_setValue.
+ * Logs each step including warnings when no data is provided and errors during serialization or saving.
+ * @param {Object} data - Book data to be saved.
+ */
 function saveBookData(data) {
   const logger = createLogger("saveBookData");
 
@@ -104,6 +130,12 @@ function saveBookData(data) {
   }
 }
 
+/**
+ * Loads book data from persistent storage using GM_getValue.
+ * Returns a parsed object or an empty object on failure.
+ * Logs the raw data retrieved and any errors encountered during parsing.
+ * @returns {Object} Parsed book data object.
+ */
 function loadBookData() {
   const logger = createLogger("loadBookData");
   try {
@@ -118,6 +150,13 @@ function loadBookData() {
   }
 }
 
+/**
+ * Converts an HTML element's content to plain text while preserving line breaks.
+ * Replaces <br> tags with newline characters and wraps <p> elements with newlines.
+ * Clones the element to avoid modifying the original DOM.
+ * @param {HTMLElement} htmlElement - The source HTML element.
+ * @returns {string} Text content with line breaks preserved.
+ */
 function htmlToTextWithLineBreaks(htmlElement) {
   if (!htmlElement) return "";
 
@@ -140,6 +179,14 @@ function htmlToTextWithLineBreaks(htmlElement) {
   return clone.textContent.trim();
 }
 
+/**
+ * Site-specific modules for detecting and extracting book data.
+ * Each module provides:
+ * - detect(): returns boolean if the current page matches the site structure.
+ * - extract(): calls site-specific extraction function and returns extracted data.
+ *
+ * Uses createLogger for debug tracing of detection and extraction processes.
+ */
 const siteModules = {
   "goodreads.com": {
     detect() {
@@ -185,6 +232,27 @@ const siteModules = {
   // add other site modules here
 };
 
+// ===== SECTION: User Interface Components =====
+// ===== FILE PATH: src/modules/ui.js ==========
+
+/**
+ * UI component function to add a floating preview panel ("bubble") to the page.
+ *
+ * This panel displays stored book metadata in a JSON formatted view on the left,
+ * and shows the book cover image with a clickable link and download option on the right.
+ *
+ * Key behaviors:
+ * - Loads book data from persistent storage.
+ * - Skips rendering if no valid data or panel already exists.
+ * - Creates a fixed-position panel anchored to bottom-left of viewport.
+ * - Includes a close button to remove the panel.
+ * - Uses monospace font and styled containers for readability.
+ * - Excludes the cover URL from JSON preview to reduce clutter.
+ * - The cover image opens in a new tab when clicked.
+ * - A download link below the cover triggers a save of the image.
+ * - All style and DOM creation is done programmatically.
+ * - Uses logging to track loading, error, and lifecycle events.
+ */
 function addPreviewPanel() {
   const logger = createLogger("addPreviewPanel");
 
@@ -309,6 +377,23 @@ function addPreviewPanel() {
   logger.debug("Preview panel injected.");
 }
 
+// ===== SECTION: Amazon Extraction =====
+// ===== FILE PATH: src/extractors/amazon.js ==========
+
+/**
+ * Extracts book metadata from an Amazon book product page.
+ *
+ * This async function scrapes key information such as:
+ * - Title, subtitle, reading format, edition info, release date
+ * - Description text with line breaks preserved
+ * - Cover image URL
+ * - Authors, contributors, and publisher info from byline
+ * - Detailed product info depending on format (audiobook or regular book)
+ *
+ * Utilizes DOM queries to target Amazon's page structure, with fallback and normalization logic.
+ * Logs detailed debug info at every step for traceability.
+ * Returns a populated bookSchema object with extracted data.
+ */
 async function extractAmazon() {
   const logger = createLogger("extractAmazon");
   logger.debug("Invoked extractAmazon()");
@@ -323,14 +408,14 @@ async function extractAmazon() {
 
   if (titleEl) {
     data.title = titleEl.textContent.trim();
-    logger.debug(`[extractAmazon] Title extracted: ${data.title}`);
+    logger.debug(`Title extracted: ${data.title}`);
   } else {
-    logger.debug("[extractAmazon] Title element not found");
+    logger.debug("Title element not found");
   }
 
   if (subtitleEl) {
     const subtitleText = subtitleEl.textContent.trim();
-    logger.debug(`[extractAmazon] Subtitle extracted: ${subtitleText}`);
+    logger.debug(`Subtitle extracted: ${subtitleText}`);
 
     const parts = subtitleText.split("–").map((part) => part.trim());
 
@@ -360,13 +445,11 @@ async function extractAmazon() {
       }
 
       data.releaseDate = parts[1];
-      logger.debug(`[extractAmazon] Reading format: ${data.readingFormat}`);
-      logger.debug(`[extractAmazon] Edition info: ${data.editionInfo}`);
-      logger.debug(`[extractAmazon] Release date: ${data.releaseDate}`);
+      logger.debug(`Reading format: ${data.readingFormat}`);
+      logger.debug(`Edition info: ${data.editionInfo}`);
+      logger.debug(`Release date: ${data.releaseDate}`);
     } else {
-      logger.debug(
-        '[extractAmazon] Subtitle does not contain expected format with "–"'
-      );
+      logger.debug('Subtitle does not contain expected format with "–"');
     }
   } else if (bindingEl) {
     // Audiobook fallback
@@ -378,17 +461,13 @@ async function extractAmazon() {
     data.editionFormat = "Audible";
     data.editionInfo = versionText || "";
 
-    logger.debug(
-      `[extractAmazon] Reading format set to: ${data.readingFormat}`
-    );
-    logger.debug(
-      `[extractAmazon] Edition format set to: ${data.editionFormat}`
-    );
-    logger.debug(`[extractAmazon] Edition info set to: ${data.editionInfo}`);
+    logger.debug(`Reading format set to: ${data.readingFormat}`);
+    logger.debug(`Edition format set to: ${data.editionFormat}`);
+    logger.debug(`Edition info set to: ${data.editionInfo}`);
 
     data.releaseDate = "";
   } else {
-    logger.debug("[extractAmazon] Subtitle and audiobook elements not found");
+    logger.debug("Subtitle and audiobook elements not found");
   }
 
   // Extract description
@@ -398,18 +477,18 @@ async function extractAmazon() {
   );
   if (descriptionContainer) {
     data.description = htmlToTextWithLineBreaks(descriptionContainer);
-    logger.debug("[extractAmazon] Description extracted with line breaks.");
+    logger.debug("Description extracted with line breaks.");
   } else {
-    logger.debug("[extractAmazon] Description element not found.");
+    logger.debug("Description element not found.");
   }
 
   // Extract Cover
   const coverImgEl = document.getElementById("landingImage");
   if (coverImgEl) {
     data.cover = coverImgEl.src || "";
-    logger.debug(`[extractAmazon] Cover image URL extracted: ${data.cover}`);
+    logger.debug(`Cover image URL extracted: ${data.cover}`);
   } else {
-    logger.debug("[extractAmazon] Cover image element not found");
+    logger.debug("Cover image element not found");
   }
 
   // --- Extract authors, contributors, publisher from byline ---
@@ -465,6 +544,26 @@ async function extractAmazon() {
   logger.debug(`Contributors parsed: ${JSON.stringify(data.contributors)}`);
   logger.debug(`Publisher parsed: ${data.publisher}`);
 
+  // Parse Series
+
+  const seriesWidget = document.querySelector('#seriesBulletWidget_feature_div a');
+
+if (seriesWidget) {
+  const text = seriesWidget.textContent.trim(); // "Book 20 of 29: Backyard Starship"
+
+  const match = text.match(/Book\s+(\d+)\s+of\s+\d+:\s+(.+)/i);
+  if (match) {
+    const seriesNumber = match[1]; // "20"
+    const seriesName = match[2];   // "Backyard Starship"
+
+    data.seriesNumber = seriesNumber;
+    data.seriesName = seriesName;
+
+    logger.debug(`Series number: ${seriesNumber}`);
+    logger.debug(`Series name: ${seriesName}`);
+  }
+}
+
   // --- Determine where to parse product details based on readingFormat ---
   const readingFormatLower = (data.readingFormat || "").toLowerCase();
 
@@ -488,7 +587,7 @@ async function extractAmazon() {
         switch (header) {
           case "part of series":
             data.seriesName = valueText;
-            logger.debug(`[extractAmazon] Series name: ${data.seriesName}`);
+            logger.debug(`Series name: ${data.seriesName}`);
             break;
 
           case "listening length":
@@ -507,52 +606,44 @@ async function extractAmazon() {
                 durationObj.seconds = parseInt(part, 10) || 0;
             });
             data.audiobookDuration = [durationObj];
-            logger.debug(
-              `[extractAmazon] Audiobook duration: ${JSON.stringify(
-                durationObj
-              )}`
-            );
+            logger.debug(`Audiobook duration: ${JSON.stringify(durationObj)}`);
             break;
 
           case "audible.com release date":
             data.releaseDate = valueText;
-            logger.debug(
-              `[extractAmazon] Release date (Audible): ${data.releaseDate}`
-            );
+            logger.debug(`Release date (Audible): ${data.releaseDate}`);
             break;
 
           case "publisher":
             data.publisher = valueText;
-            logger.debug(`[extractAmazon] Publisher: ${data.publisher}`);
+            logger.debug(`Publisher: ${data.publisher}`);
             break;
 
           case "program type":
             data.readingFormat = valueText;
             logger.debug(
-              `[extractAmazon] Reading format (Program Type): ${data.readingFormat}`
+              `Reading format (Program Type): ${data.readingFormat}`
             );
             break;
 
           case "version":
             data.editionInfo = valueText.replace(/^–+\s*/, "");
-            logger.debug(`[extractAmazon] Edition info: ${data.editionInfo}`);
+            logger.debug(`Edition info: ${data.editionInfo}`);
             break;
 
           case "language":
             data.releaseLanguage = valueText;
-            logger.debug(
-              `[extractAmazon] Release language: ${data.releaseLanguage}`
-            );
+            logger.debug(`Release language: ${data.releaseLanguage}`);
             break;
 
           case "asin":
             data.asin = valueText;
-            logger.debug(`[extractAmazon] ASIN: ${data.asin}`);
+            logger.debug(`ASIN: ${data.asin}`);
             break;
         }
       });
     } else {
-      logger.debug("[extractAmazon] Audible product details table not found");
+      logger.debug("Audible product details table not found");
     }
   } else {
     // Regular books - parse detail bullets
@@ -574,54 +665,45 @@ async function extractAmazon() {
           .toLowerCase();
         const value = valueEl.textContent.trim();
 
-        logger.debug(
-          `[extractAmazon] Detail bullet label: "${label}", value: "${value}"`
-        );
+        logger.debug(`Detail bullet label: "${label}", value: "${value}"`);
 
         switch (label) {
           case "publisher":
             if (!data.publisher) data.publisher = value;
-            logger.debug(`[extractAmazon] Publisher: ${data.publisher}`);
+            logger.debug(`Publisher: ${data.publisher}`);
             break;
 
           case "publication date":
             data.releaseDate = value;
-            logger.debug(`[extractAmazon] Release date: ${data.releaseDate}`);
+            logger.debug(`Release date: ${data.releaseDate}`);
             break;
 
           case "language":
             data.releaseLanguage = value;
-            logger.debug(
-              `[extractAmazon] Release language: ${data.releaseLanguage}`
-            );
+            logger.debug(`Release language: ${data.releaseLanguage}`);
             break;
 
           case "print length":
             const pageCountMatch = value.match(/\d+/);
             if (pageCountMatch) {
               data.pageCount = parseInt(pageCountMatch[0], 10);
-              logger.debug(`[extractAmazon] Page count: ${data.pageCount}`);
+              logger.debug(`Page count: ${data.pageCount}`);
             }
             break;
 
           case "isbn-10":
             data.isbn10 = value.replace(/-/g, "");
-            logger.debug(`[extractAmazon] ISBN-10: ${data.isbn10}`);
+            logger.debug(`ISBN-10: ${data.isbn10}`);
             break;
 
           case "isbn-13":
             data.isbn13 = value.replace(/-/g, "");
-            logger.debug(`[extractAmazon] ISBN-13: ${data.isbn13}`);
-            break;
-
-          case "part of series":
-            data.seriesName = value;
-            logger.debug(`[extractAmazon] Series name: ${data.seriesName}`);
+            logger.debug(`ISBN-13: ${data.isbn13}`);
             break;
         }
       });
     } else {
-      logger.debug("[extractAmazon] Detail bullets list not found");
+      logger.debug("Detail bullets list not found");
     }
   }
 
@@ -629,13 +711,32 @@ async function extractAmazon() {
   return data;
 }
 
+// ===== SECTION: Goodreads Extraction =====
+// ===== FILE PATH: src/extractors/goodreads.js ==========
+
+/**
+ * Extracts book metadata from a Goodreads book page.
+ * 
+ * This async function scrapes various details including:
+ * - Cover image URL
+ * - Title and authors (including expanding "...more" contributors if present)
+ * - Description text
+ * - Series name and number
+ * - Detailed lists of authors and contributors with roles
+ * - Edition details like format, publication date, publisher, ISBNs, ASIN, and language
+ * 
+ * Uses DOM queries targeting Goodreads' page structure, with logic to normalize and parse key fields.
+ * Waits briefly to load expanded contributor data if necessary.
+ * Logs detailed debug messages to trace extraction steps.
+ * Returns a populated bookSchema object with extracted metadata.
+ */
 async function extractGoodreads() {
   const logger = createLogger("extractGoodreads");
   logger.debug("Invoked extractGoodreads()");
 
   const data = bookSchema;
 
-  // Expand "...more" contributors if present
+  // Expand "...more" contributors if present, to access full contributor list
   const moreContributorsBtn = document.querySelector(
     ".ContributorLinksList .Button__labelItem"
   );
@@ -650,32 +751,32 @@ async function extractGoodreads() {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
-  // Cover image
+  // Extract cover image URL
   const coverEl =
     document.querySelector(".BookCover__image img.ResponsiveImage")?.src ||
     null;
   data.cover = coverEl;
   logger.debug("Extracted cover:", coverEl);
 
-  // Title
+  // Extract book title
   const titleEl = document.querySelector('h1[data-testid="bookTitle"]');
   data.title = titleEl?.textContent.trim() || "";
   logger.debug("Extracted title:", data.title);
 
-  // Authors (initial set)
+  // Initial authors extraction from itemprop=name spans
   data.authors = Array.from(
     document.querySelectorAll('span[itemprop="name"]')
   ).map((el) => el.textContent.trim());
   logger.debug("Initial authors extracted:", data.authors);
 
-  // Description
+  // Extract description text
   const descEl = document.querySelector(
     'div[data-testid="description"] span.Formatted'
   );
   data.description = descEl?.textContent.trim() || "";
   logger.debug("Extracted description:", data.description);
 
-  // Series
+  // Extract series name and number if present
   const seriesAnchor = document.querySelector('h3[aria-label*="series"] a');
   if (seriesAnchor) {
     const fullText = seriesAnchor.textContent.trim();
@@ -693,7 +794,7 @@ async function extractGoodreads() {
     });
   }
 
-  // author/contributor lists
+  // Parse detailed authors and contributors with roles to avoid duplicates
   const authorsSet = new Set();
   const contributorsSet = new Set();
   const authors = [];
@@ -701,11 +802,11 @@ async function extractGoodreads() {
 
   const container = document.querySelector(".ContributorLinksList");
   if (container) {
-    // Select all spans with tabindex="-1" inside the container (at any depth)
+    // Select all spans with tabindex="-1" inside the container
     const allSpans = container.querySelectorAll("span[tabindex='-1']");
 
     allSpans.forEach((span) => {
-      // For each span, get all ContributorLink anchors inside it
+      // For each span, find all contributor links
       span.querySelectorAll("a.ContributorLink").forEach((link) => {
         const nameEl = link.querySelector(".ContributorLink__name");
         const roleEl = link.querySelector(".ContributorLink__role");
@@ -714,7 +815,7 @@ async function extractGoodreads() {
         const role =
           roleEl?.textContent.trim().replace(/[()\u00A0]/g, "") || "";
 
-        // Avoid duplicates by combining name and role for contributors
+        // Distinguish contributors by presence of role, avoid duplicates
         if (role) {
           const key = `${name}|${role}`;
           if (!contributorsSet.has(key)) {
@@ -736,7 +837,7 @@ async function extractGoodreads() {
   logger.debug("Final authors:", authors);
   logger.debug("Contributors:", contributors);
 
-  // Edition details
+  // Extract edition details such as format, published date, ISBN, etc.
   const editionDetails = document.querySelector(".EditionDetails");
   if (editionDetails) {
     const items = editionDetails.querySelectorAll(".DescListItem");
@@ -753,7 +854,7 @@ async function extractGoodreads() {
           const pageMatch = parts[0].match(/\d+/);
           data.pageCount = pageMatch ? parseInt(pageMatch[0], 10) : null;
 
-          // --- Normalize format ---
+          // Normalize reading format and edition info
           const formatMap = {
             "audible audio": {
               readingFormat: "Audiobook",
@@ -859,6 +960,15 @@ async function extractGoodreads() {
   return data;
 }
 
+// ===== SECTION: Hardcover Functionality =====
+// ===== FILE PATH: src/modules/hardcover.js ==========
+
+/**
+ * Checks if the current page is a hardcover.app import/edit page
+ * by matching the URL against known patterns for manual/new edit pages.
+ * Logs the URL and the result of the test.
+ * @returns {boolean} True if on hardcover.app book import or edit page.
+ */
 function isHardcoverImportPage() {
   const logger = createLogger("isHardcoverImportPage");
   const url = location.href;
@@ -871,91 +981,102 @@ function isHardcoverImportPage() {
   return result;
 }
 
+/**
+ * Helper: Set value of input element by id and trigger input/change events.
+ * @param {string} id - The id of the input element.
+ * @param {string} value - The value to set.
+ */
+function setInputId(id, value) {
+  const logger = createLogger("setInputId");
+  logger.debug(`Setting input Id for field '${id}' to: `, value);
+
+  const el = document.getElementById(id);
+  if (!el || typeof value !== "string") {
+    logger.debug(`Skipped '${id}' - element not found or value not a string.`);
+    return;
+  }
+
+  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    "value"
+  )?.set;
+
+  nativeInputValueSetter?.call(el, value);
+
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+
+  logger.debug(`Set input '${id}' to:`, value);
+}
+
+/**
+ * Helper: Set value of input or textarea element by label text and trigger input/change events.
+ * @param {string} labelText - The exact text content of the label.
+ * @param {string|number} value - The value to set.
+ */
+function setInputLabel(labelText, value) {
+  const logger = createLogger("setInputLabel");
+  logger.debug(`Setting input for '${labelText}' to:`, value);
+
+  if (typeof value !== "string" && typeof value !== "number") {
+    logger.debug(`Skipped '${labelText}' - value not a string or number`);
+    return;
+  }
+  const stringValue = String(value);
+
+  const labels = Array.from(document.querySelectorAll("label"));
+  const label = labels.find((l) => l.textContent.trim() === labelText);
+
+  if (!label) {
+    logger.debug(`Label '${labelText}' not found`);
+    return;
+  }
+
+  const container = label.closest("div.border-t");
+
+  if (!container) {
+    logger.debug(`Container for label '${labelText}' not found`);
+    return;
+  }
+
+  const input = container.querySelector("input, textarea");
+
+  if (!input) {
+    logger.debug(`Input or textarea for label '${labelText}' not found`);
+    return;
+  }
+
+  const setter = Object.getOwnPropertyDescriptor(
+    Object.getPrototypeOf(input),
+    "value"
+  )?.set;
+
+  setter?.call(input, stringValue);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+
+  logger.debug(`Set input for '${labelText}' to:`, stringValue);
+}
+
+/**
+ * Imports extracted book metadata into hardcover.app's book form fields.
+ * Uses element IDs and label text to locate input fields.
+ * Updates input values and dispatches 'input' and 'change' events
+ * to trigger framework reactivity and UI updates.
+ * Logs detailed debug information for each field set operation.
+ *
+ * @param {object} data - Book metadata object to import.
+ */
 function importBookDataToHardcover(data) {
   const logger = createLogger("importBookDataToHardcover");
-  logger.debug("Called with data:", data); // Value was passed in
+  logger.debug("Called with data:", data);
 
   if (!data) {
     logger.warn("No data provided, exiting early.");
     return;
   }
 
-  // Local helper to populate input `id` labelled fields and trigger reactive updates
-  const setInputId = (id, value) => {
-    logger.debug(`Setting input Id for field '${id}' to: `, value);
-
-    const el = document.getElementById(id);
-    if (!el || typeof value !== "string") {
-      logger.debug(
-        `Skipped '${id}' - element not found or value not a string.`
-      );
-      return;
-    }
-
-    // Use native setter to trigger framework reactivity
-    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-      window.HTMLInputElement.prototype,
-      "value"
-    )?.set;
-
-    nativeInputValueSetter?.call(el, value);
-
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-
-    logger.debug(`Set input '${id}' to:`, value);
-  };
-
-  // Local helper to populate input fields by visible <label> text and trigger reactive updates
-  const setInputLabel = (labelText, value) => {
-    logger.debug(`Setting input for '${labelText}' to:`, value);
-
-    // Accept string or number values, convert number to string for input
-    if (typeof value !== "string" && typeof value !== "number") {
-      logger.debug(`Skipped '${labelText}' - value not a string or number`);
-      return;
-    }
-    const stringValue = String(value);
-
-    // Find label with exact trimmed text
-    const labels = Array.from(document.querySelectorAll("label"));
-    const label = labels.find((l) => l.textContent.trim() === labelText);
-
-    if (!label) {
-      logger.debug(`Label '${labelText}' not found`);
-      return;
-    }
-
-    // Closest container with class 'border-t' that holds label and input/textarea
-    const container = label.closest("div.border-t");
-
-    if (!container) {
-      logger.debug(`Container for label '${labelText}' not found`);
-      return;
-    }
-
-    // Look for input or textarea inside container
-    const input = container.querySelector("input, textarea");
-
-    if (!input) {
-      logger.debug(`Input or textarea for label '${labelText}' not found`);
-      return;
-    }
-
-    // Set value and trigger reactive input/change events
-    const setter = Object.getOwnPropertyDescriptor(
-      Object.getPrototypeOf(input),
-      "value"
-    )?.set;
-
-    setter?.call(input, stringValue);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-
-    logger.debug(`Set input for '${labelText}' to:`, stringValue);
-  };
-
-  // Setting form field values using data input
+  // Populate hardcover.app form fields from extracted data
   setInputId("field-title", data.title || "");
   setInputId("field-subtitle", data.subtitle || "");
   setInputId("field-isbn-10", data.isbn10 || "");
@@ -965,8 +1086,12 @@ function importBookDataToHardcover(data) {
 
   setInputLabel("Description", data.description || "");
   setInputLabel("Page Count", data.pageCount);
+
   logger.info("Finished populating form fields.");
 }
+
+// ===== SECTION: Main =====
+// ===== FILE PATH: src/core/main.js ==========
 
 (function () {
   "use strict";
@@ -974,12 +1099,12 @@ function importBookDataToHardcover(data) {
   // Create logger for this module
   const logger = createLogger("floatingBubble");
 
-  // Store last url
+  // Store last URL to detect navigation changes
   let lastUrl = location.href;
 
   /**
    * Creates a floating bubble container in the bottom-right corner
-   * with a clickable header to toggle content visibility.
+   * with a clickable header that toggles content visibility.
    * Returns references to the bubble container and content area.
    */
   function createFloatingBubble() {
@@ -1006,34 +1131,34 @@ function importBookDataToHardcover(data) {
       height: "40px", // start collapsed
     });
 
-    // Header bar with toggle functionality and icon
+    // Create header bar with toggle functionality and icon
     const header = document.createElement("div");
     header.style.cssText = `
-    background: #0055aa;
-    color: #fff;
-    padding: 8px;
-    cursor: pointer;
-    font-weight: bold;
-    user-select: none;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  `;
+      background: #0055aa;
+      color: #fff;
+      padding: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      user-select: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    `;
     header.textContent = "Book Metadata";
 
     const toggleIcon = document.createElement("span");
-    toggleIcon.textContent = "▼"; // down arrow for collapsed
+    toggleIcon.textContent = "▼"; // down arrow for collapsed state
     toggleIcon.style.transition = "transform 0.3s ease";
     header.appendChild(toggleIcon);
 
     bubble.appendChild(header);
 
-    // Content container hidden by default (collapsed)
+    // Create content container, hidden by default (collapsed)
     const content = document.createElement("div");
     content.id = "floatingBubbleContent";
     Object.assign(content.style, {
       padding: "8px",
-      display: "none",
+      display: "none", // collapsed initially
       maxHeight: "350px",
       overflowY: "auto",
       display: "flex",
@@ -1044,6 +1169,7 @@ function importBookDataToHardcover(data) {
 
     bubble.appendChild(content);
 
+    // Toggle content visibility on header click with logging
     header.onclick = () => {
       if (content.style.display === "none") {
         content.style.display = "flex";
@@ -1066,8 +1192,9 @@ function importBookDataToHardcover(data) {
   }
 
   /**
-   * Checks if the current page is a Hardcover import page.
-   * Re-uses your existing isHardcoverImportPage() function or equivalent.
+   * Checks if the current page is a Hardcover import or edit page.
+   * Uses a regex to match relevant URL patterns.
+   * @returns {boolean} True if current page is a hardcover.app import/edit page.
    */
   function isHardcoverImportPage() {
     const url = location.href;
@@ -1077,22 +1204,23 @@ function importBookDataToHardcover(data) {
   }
 
   /**
-   * Main initialization of floating bubble UI and button setup.
-   * Decides which buttons to show based on site and saved data.
+   * Initializes the floating bubble UI.
+   * Sets up buttons and event handlers based on the current site context
+   * and stored book data.
    */
   async function initFloatingBubble() {
     logger.info("Initializing floating bubble");
 
-    const rawHost = location.hostname.toLowerCase(); // e.g., "www.website.ca"
-    logger.debug(`rawHost: '${rawHost}`);
-    const host = rawHost.replace(/^www\./, ""); // "website.ca"
+    // Get normalized host for site module detection
+    const rawHost = location.hostname.toLowerCase();
+    logger.debug(`rawHost: '${rawHost}'`);
+    const host = rawHost.replace(/^www\./, "");
 
-    // Normalize Amazon host to shared key
+    // Normalize Amazon host to a generic key
     const normalizedHost = host.includes("amazon.") ? "amazon" : host;
-    logger.debug(`normalizedHost: '${normalizedHost}`);
+    logger.debug(`normalizedHost: '${normalizedHost}'`);
 
     const module = siteModules[normalizedHost];
-
     const isImportPage = isHardcoverImportPage();
 
     let savedData = loadBookData();
@@ -1101,7 +1229,7 @@ function importBookDataToHardcover(data) {
 
     const { bubble, content } = createFloatingBubble();
 
-    // Message container for temporary messages
+    // Message container for displaying temporary feedback to user
     let messageEl = content.querySelector("#floatingBubbleMessage");
     if (!messageEl) {
       messageEl = document.createElement("div");
@@ -1118,6 +1246,11 @@ function importBookDataToHardcover(data) {
       content.insertBefore(messageEl, content.firstChild);
     }
 
+    /**
+     * Displays a temporary message in the bubble for a set duration.
+     * @param {string} msg - Message text to display.
+     * @param {number} duration - Duration in ms before fading out.
+     */
     function showTemporaryMessage(msg, duration = 3000) {
       messageEl.textContent = msg;
       messageEl.style.opacity = "1";
@@ -1131,9 +1264,11 @@ function importBookDataToHardcover(data) {
       }, duration);
     }
 
+    // Container for buttons in the bubble UI
     const btnContainer = document.createElement("div");
     btnContainer.style.marginBottom = "8px";
 
+    // If site module exists and detects page type, add extract button
     if (module && module.detect()) {
       logger.debug("Extraction module detected for host:", host);
 
@@ -1154,6 +1289,7 @@ function importBookDataToHardcover(data) {
       btnContainer.appendChild(extractBtn);
     }
 
+    // If on Hardcover import page, add import button
     if (isImportPage) {
       logger.debug("Hardcover import page detected");
 
@@ -1179,11 +1315,12 @@ function importBookDataToHardcover(data) {
       btnContainer.appendChild(importBtn);
     }
 
-    // Copy JSON button
+    // Button to copy JSON data to clipboard
     const copyJsonBtn = document.createElement("button");
     copyJsonBtn.textContent = "📋 Copy JSON";
     copyJsonBtn.disabled = !hasSavedData;
     copyJsonBtn.style.marginRight = "8px";
+
     copyJsonBtn.onclick = () => {
       try {
         const jsonStr = JSON.stringify(loadBookData(), null, 2);
@@ -1195,11 +1332,13 @@ function importBookDataToHardcover(data) {
         logger.error("Copy JSON failed:", e);
       }
     };
+
     btnContainer.appendChild(copyJsonBtn);
 
-    // Refresh button
+    // Button to refresh displayed book data in bubble
     const refreshBtn = document.createElement("button");
     refreshBtn.textContent = "🔄 Refresh";
+
     refreshBtn.onclick = () => {
       const refreshedData = loadBookData();
       if (refreshedData && Object.keys(refreshedData).length > 0) {
@@ -1214,10 +1353,12 @@ function importBookDataToHardcover(data) {
         logger.info("No book data on refresh");
       }
     };
+
     btnContainer.appendChild(refreshBtn);
 
     content.appendChild(btnContainer);
 
+    // Show saved book data in bubble on page load, if present
     if (hasSavedData) {
       updateContent(savedData);
       content.style.display = "block";
@@ -1225,8 +1366,7 @@ function importBookDataToHardcover(data) {
       logger.info("Displaying saved book data in bubble on load");
     }
 
-    // Detect URL changes to reload content from storage
-    let lastUrl = location.href;
+    // Observe DOM mutations to detect URL changes for SPA navigation
     new MutationObserver(() => {
       if (location.href !== lastUrl) {
         lastUrl = location.href;
@@ -1239,16 +1379,21 @@ function importBookDataToHardcover(data) {
       }
     }).observe(document, { subtree: true, childList: true });
 
+    /**
+     * Updates the bubble's content area with formatted book metadata preview.
+     * Displays text fields and cover image with click-to-copy functionality.
+     * @param {object} data - The book metadata to display.
+     */
     function updateContent(data) {
       logger.debug("Updating bubble content preview");
 
-      // Remove previous flex container with text + image if present
+      // Remove any existing content container to replace
       const oldFlexContainer = content.querySelector(
         ".floatingBubbleFlexContainer"
       );
       if (oldFlexContainer) oldFlexContainer.remove();
 
-      // Container to hold formatted text and image side by side
+      // Create flex container to hold text and image side by side
       const flexContainer = document.createElement("div");
       flexContainer.className = "floatingBubbleFlexContainer";
       Object.assign(flexContainer.style, {
@@ -1273,24 +1418,24 @@ function importBookDataToHardcover(data) {
         userSelect: "none",
       });
 
-      // Helper to capitalize field names prettily
+      // Helper to prettify camelCase field names for display
       const prettify = (str) =>
         str
           .replace(/([A-Z])/g, " $1") // split camelCase
           .replace(/^./, (c) => c.toUpperCase()) // capitalize first letter
           .trim();
 
-      // Iterate fields except cover
+      // Populate text container with key-value pairs from data
       Object.entries(data).forEach(([key, value]) => {
-        if (!value) return; // skip empty or falsy
+        if (!value) return; // skip empty or falsy values
 
-        // Custom formatting for audiobookDuration array
+        // Special formatting for audiobookDuration array
         if (
           key === "audiobookDuration" &&
           Array.isArray(value) &&
           value.length > 0
         ) {
-          const dur = value[0]; // assuming one duration object
+          const dur = value[0]; // assume first duration object
           const parts = [];
           if (dur.hours)
             parts.push(`${dur.hours} hour${dur.hours !== 1 ? "s" : ""}`);
@@ -1301,6 +1446,7 @@ function importBookDataToHardcover(data) {
           value = parts.join(", ");
           if (!value) return;
         } else if (Array.isArray(value)) {
+          // Format arrays to comma-separated strings
           if (key === "contributors") {
             value = value.map((c) => `${c.name} (${c.role})`).join(", ");
           } else {
@@ -1323,6 +1469,7 @@ function importBookDataToHardcover(data) {
         valueSpan.style.textDecoration = "underline";
         valueSpan.title = "Click to copy";
 
+        // Copy field value to clipboard on click with logging
         valueSpan.onclick = () => {
           navigator.clipboard.writeText(value).then(() => {
             logger.info(`Copied "${key}" to clipboard.`);
@@ -1337,7 +1484,7 @@ function importBookDataToHardcover(data) {
 
       flexContainer.appendChild(textContainer);
 
-      // Right pane: image container, same as before
+      // Right pane: cover image and download link if cover URL exists
       if (data.cover) {
         const imgContainer = document.createElement("div");
         imgContainer.id = "imgContainer";
@@ -1378,6 +1525,7 @@ function importBookDataToHardcover(data) {
           userSelect: "none",
         });
 
+        // Download cover image on click with error handling and logging
         downloadLink.onclick = async (e) => {
           e.preventDefault();
           try {
@@ -1412,25 +1560,26 @@ function importBookDataToHardcover(data) {
   }
 
   /**
-   * Checks to see if the page has changed by normal navigation
-   * update bubble dynamically
+   * Checks for URL changes on single-page apps by polling.
+   * If URL changes, removes existing bubble and reinitializes UI.
    */
   async function checkUrlChange() {
     if (location.href !== lastUrl) {
       lastUrl = location.href;
       logger.info("URL changed, reinitializing floating bubble.");
-      // Remove existing bubble if any
+      // Remove existing bubble if present
       const existingBubble = document.getElementById("floatingBubble");
       if (existingBubble) existingBubble.remove();
-      // Re-run init
+      // Re-initialize bubble UI
       await initFloatingBubble();
     }
   }
 
-  // Run initialization immediately
+  // Run floating bubble initialization immediately on script load
   initFloatingBubble();
 
   // Poll for URL changes every 2000ms (adjust interval as needed)
+  const bubbleRefresh = 2000;
   setInterval(checkUrlChange, bubbleRefresh);
 })();
 

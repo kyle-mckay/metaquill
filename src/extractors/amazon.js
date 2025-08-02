@@ -1,3 +1,20 @@
+// ===== SECTION: Amazon Extraction =====
+// ===== FILE PATH: src/extractors/amazon.js ==========
+
+/**
+ * Extracts book metadata from an Amazon book product page.
+ *
+ * This async function scrapes key information such as:
+ * - Title, subtitle, reading format, edition info, release date
+ * - Description text with line breaks preserved
+ * - Cover image URL
+ * - Authors, contributors, and publisher info from byline
+ * - Detailed product info depending on format (audiobook or regular book)
+ *
+ * Utilizes DOM queries to target Amazon's page structure, with fallback and normalization logic.
+ * Logs detailed debug info at every step for traceability.
+ * Returns a populated bookSchema object with extracted data.
+ */
 async function extractAmazon() {
   const logger = createLogger("extractAmazon");
   logger.debug("Invoked extractAmazon()");
@@ -12,14 +29,14 @@ async function extractAmazon() {
 
   if (titleEl) {
     data.title = titleEl.textContent.trim();
-    logger.debug(`[extractAmazon] Title extracted: ${data.title}`);
+    logger.debug(`Title extracted: ${data.title}`);
   } else {
-    logger.debug("[extractAmazon] Title element not found");
+    logger.debug("Title element not found");
   }
 
   if (subtitleEl) {
     const subtitleText = subtitleEl.textContent.trim();
-    logger.debug(`[extractAmazon] Subtitle extracted: ${subtitleText}`);
+    logger.debug(`Subtitle extracted: ${subtitleText}`);
 
     const parts = subtitleText.split("–").map((part) => part.trim());
 
@@ -49,13 +66,11 @@ async function extractAmazon() {
       }
 
       data.releaseDate = parts[1];
-      logger.debug(`[extractAmazon] Reading format: ${data.readingFormat}`);
-      logger.debug(`[extractAmazon] Edition info: ${data.editionInfo}`);
-      logger.debug(`[extractAmazon] Release date: ${data.releaseDate}`);
+      logger.debug(`Reading format: ${data.readingFormat}`);
+      logger.debug(`Edition info: ${data.editionInfo}`);
+      logger.debug(`Release date: ${data.releaseDate}`);
     } else {
-      logger.debug(
-        '[extractAmazon] Subtitle does not contain expected format with "–"'
-      );
+      logger.debug('Subtitle does not contain expected format with "–"');
     }
   } else if (bindingEl) {
     // Audiobook fallback
@@ -67,17 +82,13 @@ async function extractAmazon() {
     data.editionFormat = "Audible";
     data.editionInfo = versionText || "";
 
-    logger.debug(
-      `[extractAmazon] Reading format set to: ${data.readingFormat}`
-    );
-    logger.debug(
-      `[extractAmazon] Edition format set to: ${data.editionFormat}`
-    );
-    logger.debug(`[extractAmazon] Edition info set to: ${data.editionInfo}`);
+    logger.debug(`Reading format set to: ${data.readingFormat}`);
+    logger.debug(`Edition format set to: ${data.editionFormat}`);
+    logger.debug(`Edition info set to: ${data.editionInfo}`);
 
     data.releaseDate = "";
   } else {
-    logger.debug("[extractAmazon] Subtitle and audiobook elements not found");
+    logger.debug("Subtitle and audiobook elements not found");
   }
 
   // Extract description
@@ -87,18 +98,18 @@ async function extractAmazon() {
   );
   if (descriptionContainer) {
     data.description = htmlToTextWithLineBreaks(descriptionContainer);
-    logger.debug("[extractAmazon] Description extracted with line breaks.");
+    logger.debug("Description extracted with line breaks.");
   } else {
-    logger.debug("[extractAmazon] Description element not found.");
+    logger.debug("Description element not found.");
   }
 
   // Extract Cover
   const coverImgEl = document.getElementById("landingImage");
   if (coverImgEl) {
     data.cover = coverImgEl.src || "";
-    logger.debug(`[extractAmazon] Cover image URL extracted: ${data.cover}`);
+    logger.debug(`Cover image URL extracted: ${data.cover}`);
   } else {
-    logger.debug("[extractAmazon] Cover image element not found");
+    logger.debug("Cover image element not found");
   }
 
   // --- Extract authors, contributors, publisher from byline ---
@@ -154,6 +165,26 @@ async function extractAmazon() {
   logger.debug(`Contributors parsed: ${JSON.stringify(data.contributors)}`);
   logger.debug(`Publisher parsed: ${data.publisher}`);
 
+  // Parse Series
+
+  const seriesWidget = document.querySelector('#seriesBulletWidget_feature_div a');
+
+if (seriesWidget) {
+  const text = seriesWidget.textContent.trim(); // "Book 20 of 29: Backyard Starship"
+
+  const match = text.match(/Book\s+(\d+)\s+of\s+\d+:\s+(.+)/i);
+  if (match) {
+    const seriesNumber = match[1]; // "20"
+    const seriesName = match[2];   // "Backyard Starship"
+
+    data.seriesNumber = seriesNumber;
+    data.seriesName = seriesName;
+
+    logger.debug(`Series number: ${seriesNumber}`);
+    logger.debug(`Series name: ${seriesName}`);
+  }
+}
+
   // --- Determine where to parse product details based on readingFormat ---
   const readingFormatLower = (data.readingFormat || "").toLowerCase();
 
@@ -177,7 +208,7 @@ async function extractAmazon() {
         switch (header) {
           case "part of series":
             data.seriesName = valueText;
-            logger.debug(`[extractAmazon] Series name: ${data.seriesName}`);
+            logger.debug(`Series name: ${data.seriesName}`);
             break;
 
           case "listening length":
@@ -196,52 +227,44 @@ async function extractAmazon() {
                 durationObj.seconds = parseInt(part, 10) || 0;
             });
             data.audiobookDuration = [durationObj];
-            logger.debug(
-              `[extractAmazon] Audiobook duration: ${JSON.stringify(
-                durationObj
-              )}`
-            );
+            logger.debug(`Audiobook duration: ${JSON.stringify(durationObj)}`);
             break;
 
           case "audible.com release date":
             data.releaseDate = valueText;
-            logger.debug(
-              `[extractAmazon] Release date (Audible): ${data.releaseDate}`
-            );
+            logger.debug(`Release date (Audible): ${data.releaseDate}`);
             break;
 
           case "publisher":
             data.publisher = valueText;
-            logger.debug(`[extractAmazon] Publisher: ${data.publisher}`);
+            logger.debug(`Publisher: ${data.publisher}`);
             break;
 
           case "program type":
             data.readingFormat = valueText;
             logger.debug(
-              `[extractAmazon] Reading format (Program Type): ${data.readingFormat}`
+              `Reading format (Program Type): ${data.readingFormat}`
             );
             break;
 
           case "version":
             data.editionInfo = valueText.replace(/^–+\s*/, "");
-            logger.debug(`[extractAmazon] Edition info: ${data.editionInfo}`);
+            logger.debug(`Edition info: ${data.editionInfo}`);
             break;
 
           case "language":
             data.releaseLanguage = valueText;
-            logger.debug(
-              `[extractAmazon] Release language: ${data.releaseLanguage}`
-            );
+            logger.debug(`Release language: ${data.releaseLanguage}`);
             break;
 
           case "asin":
             data.asin = valueText;
-            logger.debug(`[extractAmazon] ASIN: ${data.asin}`);
+            logger.debug(`ASIN: ${data.asin}`);
             break;
         }
       });
     } else {
-      logger.debug("[extractAmazon] Audible product details table not found");
+      logger.debug("Audible product details table not found");
     }
   } else {
     // Regular books - parse detail bullets
@@ -263,57 +286,49 @@ async function extractAmazon() {
           .toLowerCase();
         const value = valueEl.textContent.trim();
 
-        logger.debug(
-          `[extractAmazon] Detail bullet label: "${label}", value: "${value}"`
-        );
+        logger.debug(`Detail bullet label: "${label}", value: "${value}"`);
 
         switch (label) {
           case "publisher":
             if (!data.publisher) data.publisher = value;
-            logger.debug(`[extractAmazon] Publisher: ${data.publisher}`);
+            logger.debug(`Publisher: ${data.publisher}`);
             break;
 
           case "publication date":
             data.releaseDate = value;
-            logger.debug(`[extractAmazon] Release date: ${data.releaseDate}`);
+            logger.debug(`Release date: ${data.releaseDate}`);
             break;
 
           case "language":
             data.releaseLanguage = value;
-            logger.debug(
-              `[extractAmazon] Release language: ${data.releaseLanguage}`
-            );
+            logger.debug(`Release language: ${data.releaseLanguage}`);
             break;
 
           case "print length":
             const pageCountMatch = value.match(/\d+/);
             if (pageCountMatch) {
               data.pageCount = parseInt(pageCountMatch[0], 10);
-              logger.debug(`[extractAmazon] Page count: ${data.pageCount}`);
+              logger.debug(`Page count: ${data.pageCount}`);
             }
             break;
 
           case "isbn-10":
             data.isbn10 = value.replace(/-/g, "");
-            logger.debug(`[extractAmazon] ISBN-10: ${data.isbn10}`);
+            logger.debug(`ISBN-10: ${data.isbn10}`);
             break;
 
           case "isbn-13":
             data.isbn13 = value.replace(/-/g, "");
-            logger.debug(`[extractAmazon] ISBN-13: ${data.isbn13}`);
-            break;
-
-          case "part of series":
-            data.seriesName = value;
-            logger.debug(`[extractAmazon] Series name: ${data.seriesName}`);
+            logger.debug(`ISBN-13: ${data.isbn13}`);
             break;
         }
       });
     } else {
-      logger.debug("[extractAmazon] Detail bullets list not found");
+      logger.debug("Detail bullets list not found");
     }
   }
 
   logger.debug("Final extracted Amazon data:", data);
   return data;
 }
+

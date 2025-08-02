@@ -1,15 +1,18 @@
+// ===== SECTION: Main =====
+// ===== FILE PATH: src/core/main.js ==========
+
 (function () {
   "use strict";
 
   // Create logger for this module
   const logger = createLogger("floatingBubble");
 
-  // Store last url
+  // Store last URL to detect navigation changes
   let lastUrl = location.href;
 
   /**
    * Creates a floating bubble container in the bottom-right corner
-   * with a clickable header to toggle content visibility.
+   * with a clickable header that toggles content visibility.
    * Returns references to the bubble container and content area.
    */
   function createFloatingBubble() {
@@ -36,34 +39,34 @@
       height: "40px", // start collapsed
     });
 
-    // Header bar with toggle functionality and icon
+    // Create header bar with toggle functionality and icon
     const header = document.createElement("div");
     header.style.cssText = `
-    background: #0055aa;
-    color: #fff;
-    padding: 8px;
-    cursor: pointer;
-    font-weight: bold;
-    user-select: none;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  `;
+      background: #0055aa;
+      color: #fff;
+      padding: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      user-select: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    `;
     header.textContent = "Book Metadata";
 
     const toggleIcon = document.createElement("span");
-    toggleIcon.textContent = "▼"; // down arrow for collapsed
+    toggleIcon.textContent = "▼"; // down arrow for collapsed state
     toggleIcon.style.transition = "transform 0.3s ease";
     header.appendChild(toggleIcon);
 
     bubble.appendChild(header);
 
-    // Content container hidden by default (collapsed)
+    // Create content container, hidden by default (collapsed)
     const content = document.createElement("div");
     content.id = "floatingBubbleContent";
     Object.assign(content.style, {
       padding: "8px",
-      display: "none",
+      display: "none", // collapsed initially
       maxHeight: "350px",
       overflowY: "auto",
       display: "flex",
@@ -74,6 +77,7 @@
 
     bubble.appendChild(content);
 
+    // Toggle content visibility on header click with logging
     header.onclick = () => {
       if (content.style.display === "none") {
         content.style.display = "flex";
@@ -96,8 +100,9 @@
   }
 
   /**
-   * Checks if the current page is a Hardcover import page.
-   * Re-uses your existing isHardcoverImportPage() function or equivalent.
+   * Checks if the current page is a Hardcover import or edit page.
+   * Uses a regex to match relevant URL patterns.
+   * @returns {boolean} True if current page is a hardcover.app import/edit page.
    */
   function isHardcoverImportPage() {
     const url = location.href;
@@ -107,22 +112,23 @@
   }
 
   /**
-   * Main initialization of floating bubble UI and button setup.
-   * Decides which buttons to show based on site and saved data.
+   * Initializes the floating bubble UI.
+   * Sets up buttons and event handlers based on the current site context
+   * and stored book data.
    */
   async function initFloatingBubble() {
     logger.info("Initializing floating bubble");
 
-    const rawHost = location.hostname.toLowerCase(); // e.g., "www.website.ca"
-    logger.debug(`rawHost: '${rawHost}`);
-    const host = rawHost.replace(/^www\./, ""); // "website.ca"
+    // Get normalized host for site module detection
+    const rawHost = location.hostname.toLowerCase();
+    logger.debug(`rawHost: '${rawHost}'`);
+    const host = rawHost.replace(/^www\./, "");
 
-    // Normalize Amazon host to shared key
+    // Normalize Amazon host to a generic key
     const normalizedHost = host.includes("amazon.") ? "amazon" : host;
-    logger.debug(`normalizedHost: '${normalizedHost}`);
+    logger.debug(`normalizedHost: '${normalizedHost}'`);
 
     const module = siteModules[normalizedHost];
-
     const isImportPage = isHardcoverImportPage();
 
     let savedData = loadBookData();
@@ -131,7 +137,7 @@
 
     const { bubble, content } = createFloatingBubble();
 
-    // Message container for temporary messages
+    // Message container for displaying temporary feedback to user
     let messageEl = content.querySelector("#floatingBubbleMessage");
     if (!messageEl) {
       messageEl = document.createElement("div");
@@ -148,6 +154,11 @@
       content.insertBefore(messageEl, content.firstChild);
     }
 
+    /**
+     * Displays a temporary message in the bubble for a set duration.
+     * @param {string} msg - Message text to display.
+     * @param {number} duration - Duration in ms before fading out.
+     */
     function showTemporaryMessage(msg, duration = 3000) {
       messageEl.textContent = msg;
       messageEl.style.opacity = "1";
@@ -161,9 +172,11 @@
       }, duration);
     }
 
+    // Container for buttons in the bubble UI
     const btnContainer = document.createElement("div");
     btnContainer.style.marginBottom = "8px";
 
+    // If site module exists and detects page type, add extract button
     if (module && module.detect()) {
       logger.debug("Extraction module detected for host:", host);
 
@@ -184,6 +197,7 @@
       btnContainer.appendChild(extractBtn);
     }
 
+    // If on Hardcover import page, add import button
     if (isImportPage) {
       logger.debug("Hardcover import page detected");
 
@@ -209,11 +223,12 @@
       btnContainer.appendChild(importBtn);
     }
 
-    // Copy JSON button
+    // Button to copy JSON data to clipboard
     const copyJsonBtn = document.createElement("button");
     copyJsonBtn.textContent = "📋 Copy JSON";
     copyJsonBtn.disabled = !hasSavedData;
     copyJsonBtn.style.marginRight = "8px";
+
     copyJsonBtn.onclick = () => {
       try {
         const jsonStr = JSON.stringify(loadBookData(), null, 2);
@@ -225,11 +240,13 @@
         logger.error("Copy JSON failed:", e);
       }
     };
+
     btnContainer.appendChild(copyJsonBtn);
 
-    // Refresh button
+    // Button to refresh displayed book data in bubble
     const refreshBtn = document.createElement("button");
     refreshBtn.textContent = "🔄 Refresh";
+
     refreshBtn.onclick = () => {
       const refreshedData = loadBookData();
       if (refreshedData && Object.keys(refreshedData).length > 0) {
@@ -244,10 +261,12 @@
         logger.info("No book data on refresh");
       }
     };
+
     btnContainer.appendChild(refreshBtn);
 
     content.appendChild(btnContainer);
 
+    // Show saved book data in bubble on page load, if present
     if (hasSavedData) {
       updateContent(savedData);
       content.style.display = "block";
@@ -255,8 +274,7 @@
       logger.info("Displaying saved book data in bubble on load");
     }
 
-    // Detect URL changes to reload content from storage
-    let lastUrl = location.href;
+    // Observe DOM mutations to detect URL changes for SPA navigation
     new MutationObserver(() => {
       if (location.href !== lastUrl) {
         lastUrl = location.href;
@@ -269,16 +287,21 @@
       }
     }).observe(document, { subtree: true, childList: true });
 
+    /**
+     * Updates the bubble's content area with formatted book metadata preview.
+     * Displays text fields and cover image with click-to-copy functionality.
+     * @param {object} data - The book metadata to display.
+     */
     function updateContent(data) {
       logger.debug("Updating bubble content preview");
 
-      // Remove previous flex container with text + image if present
+      // Remove any existing content container to replace
       const oldFlexContainer = content.querySelector(
         ".floatingBubbleFlexContainer"
       );
       if (oldFlexContainer) oldFlexContainer.remove();
 
-      // Container to hold formatted text and image side by side
+      // Create flex container to hold text and image side by side
       const flexContainer = document.createElement("div");
       flexContainer.className = "floatingBubbleFlexContainer";
       Object.assign(flexContainer.style, {
@@ -303,24 +326,24 @@
         userSelect: "none",
       });
 
-      // Helper to capitalize field names prettily
+      // Helper to prettify camelCase field names for display
       const prettify = (str) =>
         str
           .replace(/([A-Z])/g, " $1") // split camelCase
           .replace(/^./, (c) => c.toUpperCase()) // capitalize first letter
           .trim();
 
-      // Iterate fields except cover
+      // Populate text container with key-value pairs from data
       Object.entries(data).forEach(([key, value]) => {
-        if (!value) return; // skip empty or falsy
+        if (!value) return; // skip empty or falsy values
 
-        // Custom formatting for audiobookDuration array
+        // Special formatting for audiobookDuration array
         if (
           key === "audiobookDuration" &&
           Array.isArray(value) &&
           value.length > 0
         ) {
-          const dur = value[0]; // assuming one duration object
+          const dur = value[0]; // assume first duration object
           const parts = [];
           if (dur.hours)
             parts.push(`${dur.hours} hour${dur.hours !== 1 ? "s" : ""}`);
@@ -331,6 +354,7 @@
           value = parts.join(", ");
           if (!value) return;
         } else if (Array.isArray(value)) {
+          // Format arrays to comma-separated strings
           if (key === "contributors") {
             value = value.map((c) => `${c.name} (${c.role})`).join(", ");
           } else {
@@ -353,6 +377,7 @@
         valueSpan.style.textDecoration = "underline";
         valueSpan.title = "Click to copy";
 
+        // Copy field value to clipboard on click with logging
         valueSpan.onclick = () => {
           navigator.clipboard.writeText(value).then(() => {
             logger.info(`Copied "${key}" to clipboard.`);
@@ -367,7 +392,7 @@
 
       flexContainer.appendChild(textContainer);
 
-      // Right pane: image container, same as before
+      // Right pane: cover image and download link if cover URL exists
       if (data.cover) {
         const imgContainer = document.createElement("div");
         imgContainer.id = "imgContainer";
@@ -408,6 +433,7 @@
           userSelect: "none",
         });
 
+        // Download cover image on click with error handling and logging
         downloadLink.onclick = async (e) => {
           e.preventDefault();
           try {
@@ -442,24 +468,26 @@
   }
 
   /**
-   * Checks to see if the page has changed by normal navigation
-   * update bubble dynamically
+   * Checks for URL changes on single-page apps by polling.
+   * If URL changes, removes existing bubble and reinitializes UI.
    */
   async function checkUrlChange() {
     if (location.href !== lastUrl) {
       lastUrl = location.href;
       logger.info("URL changed, reinitializing floating bubble.");
-      // Remove existing bubble if any
+      // Remove existing bubble if present
       const existingBubble = document.getElementById("floatingBubble");
       if (existingBubble) existingBubble.remove();
-      // Re-run init
+      // Re-initialize bubble UI
       await initFloatingBubble();
     }
   }
 
-  // Run initialization immediately
+  // Run floating bubble initialization immediately on script load
   initFloatingBubble();
 
   // Poll for URL changes every 2000ms (adjust interval as needed)
+  const bubbleRefresh = 2000;
   setInterval(checkUrlChange, bubbleRefresh);
 })();
+

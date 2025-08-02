@@ -1,3 +1,19 @@
+// ===== SECTION: Utilities and Functions =====
+// ===== FILE PATH: src/modules/utilities.js ==========
+
+/**
+ * Logging utility with configurable verbosity levels and named loggers.
+ *
+ * LogLevel enum defines severity levels: ERROR (0), WARN (1), INFO (2), DEBUG (3).
+ * currentLogLevel controls the global log output verbosity.
+ * bubbleRefresh sets refresh interval for UI bubbles (not related to logging).
+ *
+ * createLogger(fnName): Returns a logger object scoped to the given function/module name.
+ * Each logger method prepends the fnName to the message for clear context.
+ *
+ * log(level, ...args): Internal function routing logs to console based on level and currentLogLevel.
+ */
+
 const LogLevel = {
   ERROR: 0,
   WARN: 1,
@@ -36,8 +52,13 @@ function log(level, ...args) {
   }
 }
 
+/**
+ * Schema definition object representing the structure of extracted book metadata.
+ * Fields include identifiers, descriptive info, contributors, publication details, and more.
+ * This serves as the standardized data container for book extraction results.
+ */
 const bookSchema = {
-  sourceId: "", // The source ID from the extracted site (Goodreads, Amazon, Gooble Books, ex)
+  sourceId: "", // The source ID from the extracted site (Goodreads, Amazon, Google Books, etc.)
   title: "",
   subtitle: "",
   urlSlug: "",
@@ -65,6 +86,11 @@ const bookSchema = {
   description: "", // Multi text book description
 };
 
+/**
+ * Saves the given book data object to persistent storage using GM_setValue.
+ * Logs each step including warnings when no data is provided and errors during serialization or saving.
+ * @param {Object} data - Book data to be saved.
+ */
 function saveBookData(data) {
   const logger = createLogger("saveBookData");
 
@@ -83,6 +109,12 @@ function saveBookData(data) {
   }
 }
 
+/**
+ * Loads book data from persistent storage using GM_getValue.
+ * Returns a parsed object or an empty object on failure.
+ * Logs the raw data retrieved and any errors encountered during parsing.
+ * @returns {Object} Parsed book data object.
+ */
 function loadBookData() {
   const logger = createLogger("loadBookData");
   try {
@@ -97,6 +129,13 @@ function loadBookData() {
   }
 }
 
+/**
+ * Converts an HTML element's content to plain text while preserving line breaks.
+ * Replaces <br> tags with newline characters and wraps <p> elements with newlines.
+ * Clones the element to avoid modifying the original DOM.
+ * @param {HTMLElement} htmlElement - The source HTML element.
+ * @returns {string} Text content with line breaks preserved.
+ */
 function htmlToTextWithLineBreaks(htmlElement) {
   if (!htmlElement) return "";
 
@@ -119,6 +158,14 @@ function htmlToTextWithLineBreaks(htmlElement) {
   return clone.textContent.trim();
 }
 
+/**
+ * Site-specific modules for detecting and extracting book data.
+ * Each module provides:
+ * - detect(): returns boolean if the current page matches the site structure.
+ * - extract(): calls site-specific extraction function and returns extracted data.
+ *
+ * Uses createLogger for debug tracing of detection and extraction processes.
+ */
 const siteModules = {
   "goodreads.com": {
     detect() {
@@ -163,3 +210,4 @@ const siteModules = {
   },
   // add other site modules here
 };
+

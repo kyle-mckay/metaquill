@@ -1,10 +1,29 @@
+// ===== SECTION: Goodreads Extraction =====
+// ===== FILE PATH: src/extractors/goodreads.js ==========
+
+/**
+ * Extracts book metadata from a Goodreads book page.
+ * 
+ * This async function scrapes various details including:
+ * - Cover image URL
+ * - Title and authors (including expanding "...more" contributors if present)
+ * - Description text
+ * - Series name and number
+ * - Detailed lists of authors and contributors with roles
+ * - Edition details like format, publication date, publisher, ISBNs, ASIN, and language
+ * 
+ * Uses DOM queries targeting Goodreads' page structure, with logic to normalize and parse key fields.
+ * Waits briefly to load expanded contributor data if necessary.
+ * Logs detailed debug messages to trace extraction steps.
+ * Returns a populated bookSchema object with extracted metadata.
+ */
 async function extractGoodreads() {
   const logger = createLogger("extractGoodreads");
   logger.debug("Invoked extractGoodreads()");
 
   const data = bookSchema;
 
-  // Expand "...more" contributors if present
+  // Expand "...more" contributors if present, to access full contributor list
   const moreContributorsBtn = document.querySelector(
     ".ContributorLinksList .Button__labelItem"
   );
@@ -19,32 +38,32 @@ async function extractGoodreads() {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
-  // Cover image
+  // Extract cover image URL
   const coverEl =
     document.querySelector(".BookCover__image img.ResponsiveImage")?.src ||
     null;
   data.cover = coverEl;
   logger.debug("Extracted cover:", coverEl);
 
-  // Title
+  // Extract book title
   const titleEl = document.querySelector('h1[data-testid="bookTitle"]');
   data.title = titleEl?.textContent.trim() || "";
   logger.debug("Extracted title:", data.title);
 
-  // Authors (initial set)
+  // Initial authors extraction from itemprop=name spans
   data.authors = Array.from(
     document.querySelectorAll('span[itemprop="name"]')
   ).map((el) => el.textContent.trim());
   logger.debug("Initial authors extracted:", data.authors);
 
-  // Description
+  // Extract description text
   const descEl = document.querySelector(
     'div[data-testid="description"] span.Formatted'
   );
   data.description = descEl?.textContent.trim() || "";
   logger.debug("Extracted description:", data.description);
 
-  // Series
+  // Extract series name and number if present
   const seriesAnchor = document.querySelector('h3[aria-label*="series"] a');
   if (seriesAnchor) {
     const fullText = seriesAnchor.textContent.trim();
@@ -62,7 +81,7 @@ async function extractGoodreads() {
     });
   }
 
-  // author/contributor lists
+  // Parse detailed authors and contributors with roles to avoid duplicates
   const authorsSet = new Set();
   const contributorsSet = new Set();
   const authors = [];
@@ -70,11 +89,11 @@ async function extractGoodreads() {
 
   const container = document.querySelector(".ContributorLinksList");
   if (container) {
-    // Select all spans with tabindex="-1" inside the container (at any depth)
+    // Select all spans with tabindex="-1" inside the container
     const allSpans = container.querySelectorAll("span[tabindex='-1']");
 
     allSpans.forEach((span) => {
-      // For each span, get all ContributorLink anchors inside it
+      // For each span, find all contributor links
       span.querySelectorAll("a.ContributorLink").forEach((link) => {
         const nameEl = link.querySelector(".ContributorLink__name");
         const roleEl = link.querySelector(".ContributorLink__role");
@@ -83,7 +102,7 @@ async function extractGoodreads() {
         const role =
           roleEl?.textContent.trim().replace(/[()\u00A0]/g, "") || "";
 
-        // Avoid duplicates by combining name and role for contributors
+        // Distinguish contributors by presence of role, avoid duplicates
         if (role) {
           const key = `${name}|${role}`;
           if (!contributorsSet.has(key)) {
@@ -105,7 +124,7 @@ async function extractGoodreads() {
   logger.debug("Final authors:", authors);
   logger.debug("Contributors:", contributors);
 
-  // Edition details
+  // Extract edition details such as format, published date, ISBN, etc.
   const editionDetails = document.querySelector(".EditionDetails");
   if (editionDetails) {
     const items = editionDetails.querySelectorAll(".DescListItem");
@@ -122,7 +141,7 @@ async function extractGoodreads() {
           const pageMatch = parts[0].match(/\d+/);
           data.pageCount = pageMatch ? parseInt(pageMatch[0], 10) : null;
 
-          // --- Normalize format ---
+          // Normalize reading format and edition info
           const formatMap = {
             "audible audio": {
               readingFormat: "Audiobook",
@@ -227,3 +246,4 @@ async function extractGoodreads() {
   logger.debug("Returning data object:", data);
   return data;
 }
+
