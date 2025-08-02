@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Hardcover Librarian Tampermonkey
 // @namespace    https://github.com/kyle-mckay/hardcover-librarian-tampermonkey
-// @updateURL    https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/hardcover.user.js
-// @downloadURL  https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/hardcover.user.js
+// @updateURL    https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/build/hardcover.user.js
+// @downloadURL  https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/build/hardcover.user.js
 // @author       kyle-mckay
 // @version      1.2.1
 // @description  Extract book metadata from supported sites like Goodreads and optionally inject into sites like Hardcovers.app for easier book creation.
