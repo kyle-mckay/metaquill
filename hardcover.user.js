@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/hardcover.user.js
 // @downloadURL  https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/hardcover.user.js
 // @author       kyle-mckay
-// @version      1.2.1
+// @version      1.2.2
 // @description  Extract book metadata from supported sites like Goodreads and optionally inject into sites like Hardcovers.app for easier book creation.
 // @match        https://www.goodreads.com/*
 // @match        https://hardcover.app/*
@@ -376,6 +376,346 @@ function addPreviewPanel() {
   document.body.appendChild(panel);
   logger.debug("Preview panel injected.");
 }
+
+/**
+ * Creates the floating bubble UI container with header and content.
+ * Returns references for bubble, content container, and header.
+ * Styling is centralized here for easier future theme toggling.
+ */
+function createFloatingBubbleUI(logger, onToggle) {
+  const bubble = document.createElement("div");
+  bubble.id = "floatingBubble";
+  Object.assign(bubble.style, {
+    position: "fixed",
+    bottom: "20px",
+    right: "20px",
+    width: "600px", // expanded width
+    background: "#fff",
+    border: "1px solid #888",
+    borderRadius: "10px",
+    boxShadow: "0 4px 10px rgba(0,0,0,0.2)",
+    zIndex: 99999,
+    fontFamily: "sans-serif",
+    fontSize: "14px",
+    color: "#222",
+    userSelect: "none",
+    overflow: "hidden",
+    transition: "height 0.3s ease, width 0.3s ease, visibility 0.3s ease",
+    height: "auto", // start expanded
+  });
+
+  const header = document.createElement("div");
+  header.style.cssText = `
+    background: #0055aa;
+    color: #fff;
+    padding: 8px;
+    cursor: pointer;
+    font-weight: bold;
+    user-select: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  `;
+  header.textContent = "Book Metadata";
+
+  const toggleIcon = document.createElement("span");
+  toggleIcon.textContent = "▼";
+  toggleIcon.style.transition = "transform 0.3s ease";
+  header.appendChild(toggleIcon);
+
+  const content = document.createElement("div");
+  content.id = "floatingBubbleContent";
+  Object.assign(content.style, {
+    padding: "8px",
+    display: "flex",
+    flexDirection: "column",
+    maxHeight: "350px",
+    overflowY: "auto",
+    visibility: "visible", // start visible
+    height: "auto",
+    transition: "height 0.3s ease, visibility 0.3s ease",
+  });
+
+  const btnContainer = document.createElement("div");
+  btnContainer.style.display = "flex";
+  btnContainer.style.flexWrap = "nowrap";
+  btnContainer.style.gap = "8px";
+  btnContainer.style.marginBottom = "8px";
+
+  header.onclick = () => {
+    if (content.style.visibility === "hidden") {
+      // Expand
+      content.style.visibility = "visible";
+      content.style.height = "auto";
+      bubble.style.width = "600px"; // expanded width
+      toggleIcon.style.transform = "rotate(0deg)"; // arrow up
+      logger.debug("Bubble expanded");
+    } else {
+      // Collapse
+      content.style.height = "0";
+      content.style.visibility = "hidden";
+      bubble.style.width = "200px"; // collapsed width
+      toggleIcon.style.transform = "rotate(180deg)"; // arrow down
+      logger.debug("Bubble collapsed");
+    }
+  };
+
+  bubble.appendChild(header);
+  bubble.appendChild(content);
+  document.body.appendChild(bubble);
+
+  return { bubble, content, header };
+}
+
+/**
+ * Creates a message element used to display temporary messages in the UI.
+ * The message element is styled for visibility and fade transitions.
+ */
+function createFloatingMessage() {
+  const msg = document.createElement("div");
+  msg.id = "floatingBubbleMessage";
+  Object.assign(msg.style, {
+    marginBottom: "8px",
+    color: "#007700",
+    fontWeight: "bold",
+    minHeight: "18px",
+    transition: "opacity 0.3s ease",
+    opacity: "0",
+    userSelect: "none",
+  });
+  return msg;
+}
+
+/**
+ * Shows a temporary message inside the provided element for a duration.
+ * Fades out message smoothly and clears text after timeout.
+ * @param {HTMLElement} el Element to display message in
+ * @param {string} msg Message text to show
+ * @param {number} duration Duration in ms to show message
+ */
+function showMessage(el, msg, duration = 3000) {
+  el.textContent = msg;
+  el.style.opacity = "1";
+  clearTimeout(showMessage.timeoutId);
+  showMessage.timeoutId = setTimeout(() => {
+    el.style.opacity = "0";
+    setTimeout(() => {
+      el.textContent = "";
+    }, 300);
+  }, duration);
+}
+
+/**
+ * Creates the detailed book metadata display area inside the bubble.
+ * Shows key-value pairs on left and cover image + download on right.
+ * Click on a value copies it to clipboard with logging and message.
+ * @param {object} data Book metadata object to display
+ * @param {object} logger Logger for informational messages
+ * @param {function} showMessageFn Function to display messages
+ * @returns {HTMLElement} Container div holding the entire display
+ */
+function createBookDisplay(data, logger, showMessageFn) {
+  const container = document.createElement("div");
+  container.className = "floatingBubbleFlexContainer";
+  Object.assign(container.style, {
+    display: "flex",
+    gap: "12px",
+    alignItems: "flex-start",
+    maxHeight: "250px",
+    overflow: "hidden",
+  });
+
+  const prettify = (str) =>
+    str
+      .replace(/([A-Z])/g, " $1")
+      .replace(/^./, (c) => c.toUpperCase())
+      .trim();
+
+  // Left pane with formatted text
+  const left = document.createElement("div");
+  Object.assign(left.style, {
+    flex: "1",
+    background: "#eee",
+    padding: "6px",
+    borderRadius: "6px",
+    maxHeight: "250px",
+    overflowY: "auto",
+    fontFamily: "monospace",
+    fontSize: "12px",
+    userSelect: "none",
+  });
+
+  Object.entries(data).forEach(([key, value]) => {
+    if (!value) return;
+
+    if (key === "audiobookDuration" && Array.isArray(value) && value.length) {
+      const dur = value[0];
+      const parts = [];
+      if (dur.hours)
+        parts.push(`${dur.hours} hour${dur.hours !== 1 ? "s" : ""}`);
+      if (dur.minutes)
+        parts.push(`${dur.minutes} minute${dur.minutes !== 1 ? "s" : ""}`);
+      if (dur.seconds)
+        parts.push(`${dur.seconds} second${dur.seconds !== 1 ? "s" : ""}`);
+      value = parts.join(", ");
+    } else if (Array.isArray(value)) {
+      value =
+        key === "contributors"
+          ? value.map((c) => `${c.name} (${c.role})`).join(", ")
+          : value.join(", ");
+    }
+
+    const div = document.createElement("div");
+    div.style.marginBottom = "4px";
+
+    const label = document.createElement("span");
+    label.textContent = `${prettify(key)}: `;
+    label.style.fontWeight = "bold";
+
+    const val = document.createElement("span");
+    val.textContent = value;
+    val.style.cursor = "pointer";
+    val.style.color = "#0055aa";
+    val.style.textDecoration = "underline";
+    val.title = "Click to copy";
+    val.onclick = () => {
+      navigator.clipboard.writeText(value).then(() => {
+        logger.info(`Copied "${key}" to clipboard.`);
+        showMessageFn(`Copied ${prettify(key)} to clipboard`);
+      });
+    };
+
+    div.appendChild(label);
+    div.appendChild(val);
+    left.appendChild(div);
+  });
+
+  container.appendChild(left);
+
+  // Right pane with cover image + download link
+  if (data.cover) {
+    const right = document.createElement("div");
+    right.id = "imgContainer";
+    Object.assign(right.style, {
+      width: "150px",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: "6px",
+      overflow: "hidden",
+    });
+
+    const link = document.createElement("a");
+    link.href = data.cover;
+    link.target = "_blank";
+    link.title = "Open cover image in new tab";
+    link.style.display = "block";
+    link.style.width = "100%";
+
+    const img = document.createElement("img");
+    img.src = data.cover;
+    img.alt = data.title || "Cover Image";
+    Object.assign(img.style, {
+      width: "100%",
+      borderRadius: "6px",
+      cursor: "pointer",
+      userSelect: "none",
+    });
+
+    link.appendChild(img);
+    right.appendChild(link);
+
+    const downloadLink = document.createElement("a");
+    downloadLink.href = "#";
+    downloadLink.textContent = "⬇️ Download Cover";
+    Object.assign(downloadLink.style, {
+      color: "#0055aa",
+      textDecoration: "underline",
+      cursor: "pointer",
+      fontSize: "12px",
+      userSelect: "none",
+    });
+
+    downloadLink.onclick = async (e) => {
+      e.preventDefault();
+      try {
+        const response = await fetch(data.cover, { mode: "cors" });
+        if (!response.ok) throw new Error("Network response was not ok");
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+
+        const filename =
+          data.cover.split("/").pop().split("?")[0] || "cover.jpg";
+        a.download = filename;
+
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert("Failed to download image.");
+        logger.error("Image download failed:", err);
+      }
+    };
+
+    right.appendChild(downloadLink);
+    container.appendChild(right);
+  }
+
+  return container;
+}
+
+/**
+ * Creates a styled button element.
+ * @param {string} label Button text label
+ * @param {function} onClick Click event handler
+ * @param {object} styles Optional CSS styles as an object
+ * @returns {HTMLButtonElement}
+ */
+function createButton(label, onClick, styles = {}) {
+  const btn = document.createElement("button");
+  btn.textContent = label;
+  Object.assign(btn.style, {
+    padding: "6px 10px",
+    fontSize: "14px",
+    borderRadius: "4px",
+    border: "1px solid #0077cc",
+    backgroundColor: "#0077cc",
+    color: "#fff",
+    cursor: "pointer",
+    userSelect: "none",
+    transition: "background-color 0.3s ease",
+    ...styles,
+  });
+
+  btn.onmouseenter = () => {
+    btn.style.backgroundColor = "#005fa3";
+  };
+  btn.onmouseleave = () => {
+    btn.style.backgroundColor = "#0077cc";
+  };
+  btn.onclick = onClick;
+
+  if (styles.disabled) {
+    btn.disabled = true;
+    btn.style.opacity = "0.6";
+    btn.style.cursor = "not-allowed";
+  }
+
+  return btn;
+}
+
+// Export UI component functions for external usage
+const UIComponents = {
+  addPreviewPanel,
+  createFloatingBubbleUI,
+  createFloatingMessage,
+  showMessage,
+  createBookDisplay,
+  createButton,
+};
 
 // ===== SECTION: Amazon Extraction =====
 // ===== FILE PATH: src/extractors/amazon.js ==========
@@ -1103,95 +1443,6 @@ function importBookDataToHardcover(data) {
   let lastUrl = location.href;
 
   /**
-   * Creates a floating bubble container in the bottom-right corner
-   * with a clickable header that toggles content visibility.
-   * Returns references to the bubble container and content area.
-   */
-  function createFloatingBubble() {
-    logger.debug("Creating floating bubble UI");
-
-    const bubble = document.createElement("div");
-    bubble.id = "floatingBubble";
-    Object.assign(bubble.style, {
-      position: "fixed",
-      bottom: "20px",
-      right: "20px",
-      width: "600px",
-      background: "#fff",
-      border: "1px solid #888",
-      borderRadius: "10px",
-      boxShadow: "0 4px 10px rgba(0,0,0,0.2)",
-      zIndex: 99999,
-      fontFamily: "sans-serif",
-      fontSize: "14px",
-      color: "#222",
-      userSelect: "none",
-      overflow: "hidden",
-      transition: "height 0.3s ease",
-      height: "40px", // start collapsed
-    });
-
-    // Create header bar with toggle functionality and icon
-    const header = document.createElement("div");
-    header.style.cssText = `
-      background: #0055aa;
-      color: #fff;
-      padding: 8px;
-      cursor: pointer;
-      font-weight: bold;
-      user-select: none;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    `;
-    header.textContent = "Book Metadata";
-
-    const toggleIcon = document.createElement("span");
-    toggleIcon.textContent = "▼"; // down arrow for collapsed state
-    toggleIcon.style.transition = "transform 0.3s ease";
-    header.appendChild(toggleIcon);
-
-    bubble.appendChild(header);
-
-    // Create content container, hidden by default (collapsed)
-    const content = document.createElement("div");
-    content.id = "floatingBubbleContent";
-    Object.assign(content.style, {
-      padding: "8px",
-      display: "none", // collapsed initially
-      maxHeight: "350px",
-      overflowY: "auto",
-      display: "flex",
-      gap: "12px",
-      flexWrap: "nowrap",
-      alignItems: "flex-start",
-    });
-
-    bubble.appendChild(content);
-
-    // Toggle content visibility on header click with logging
-    header.onclick = () => {
-      if (content.style.display === "none") {
-        content.style.display = "flex";
-        bubble.style.height = "auto";
-        toggleIcon.style.transform = "rotate(180deg)"; // arrow points up
-        logger.debug("Bubble expanded");
-      } else {
-        content.style.display = "none";
-        bubble.style.height = "40px";
-        toggleIcon.style.transform = "rotate(0deg)"; // arrow points down
-        logger.debug("Bubble collapsed");
-      }
-    };
-
-    document.body.appendChild(bubble);
-
-    logger.info("Floating bubble added to DOM");
-
-    return { bubble, content, header };
-  }
-
-  /**
    * Checks if the current page is a Hardcover import or edit page.
    * Uses a regex to match relevant URL patterns.
    * @returns {boolean} True if current page is a hardcover.app import/edit page.
@@ -1227,22 +1478,13 @@ function importBookDataToHardcover(data) {
     let hasSavedData = savedData && Object.keys(savedData).length > 0;
     logger.debug("Saved book data found:", hasSavedData);
 
-    const { bubble, content } = createFloatingBubble();
+    // Create floating bubble UI using UI module
+    const { bubble, content } = UIComponents.createFloatingBubbleUI(logger);
 
     // Message container for displaying temporary feedback to user
     let messageEl = content.querySelector("#floatingBubbleMessage");
     if (!messageEl) {
-      messageEl = document.createElement("div");
-      messageEl.id = "floatingBubbleMessage";
-      Object.assign(messageEl.style, {
-        marginBottom: "8px",
-        color: "#007700",
-        fontWeight: "bold",
-        minHeight: "18px",
-        transition: "opacity 0.3s ease",
-        opacity: "0",
-        userSelect: "none",
-      });
+      messageEl = UIComponents.createFloatingMessage();
       content.insertBefore(messageEl, content.firstChild);
     }
 
@@ -1252,16 +1494,7 @@ function importBookDataToHardcover(data) {
      * @param {number} duration - Duration in ms before fading out.
      */
     function showTemporaryMessage(msg, duration = 3000) {
-      messageEl.textContent = msg;
-      messageEl.style.opacity = "1";
-
-      clearTimeout(showTemporaryMessage.timeoutId);
-      showTemporaryMessage.timeoutId = setTimeout(() => {
-        messageEl.style.opacity = "0";
-        setTimeout(() => {
-          messageEl.textContent = "";
-        }, 300);
-      }, duration);
+      UIComponents.showMessage(messageEl, msg, duration);
     }
 
     // Container for buttons in the bubble UI
@@ -1272,19 +1505,19 @@ function importBookDataToHardcover(data) {
     if (module && module.detect()) {
       logger.debug("Extraction module detected for host:", host);
 
-      const extractBtn = document.createElement("button");
-      extractBtn.textContent = "📚 Extract Book Data";
-      extractBtn.style.marginRight = "8px";
-
-      extractBtn.onclick = async () => {
-        logger.info("Extract button clicked");
-        const data = await module.extract();
-        logger.debug("Extracted data:", data);
-        saveBookData(data);
-        updateContent(data);
-        showTemporaryMessage("Book data extracted and saved.");
-        copyJsonBtn.disabled = false; // enable copy button
-      };
+      const extractBtn = UIComponents.createButton(
+        "📚 Extract Book Data",
+        async () => {
+          logger.info("Extract button clicked");
+          const data = await module.extract();
+          logger.debug("Extracted data:", data);
+          saveBookData(data);
+          updateContent(data);
+          showTemporaryMessage("Book data extracted and saved.");
+          copyJsonBtn.disabled = false; // enable copy button
+        },
+        { marginRight: "8px" }
+      );
 
       btnContainer.appendChild(extractBtn);
     }
@@ -1293,53 +1526,52 @@ function importBookDataToHardcover(data) {
     if (isImportPage) {
       logger.debug("Hardcover import page detected");
 
-      const importBtn = document.createElement("button");
-      importBtn.textContent = "⬇️ Import Book Data";
-      importBtn.style.marginRight = "8px";
-
-      importBtn.onclick = async () => {
-        logger.info("Import button clicked");
-        const data = loadBookData();
-        if (!data || Object.keys(data).length === 0) {
-          showTemporaryMessage(
-            "No book data found. Please extract book data first."
-          );
-          logger.warn("Import attempted with no saved book data");
-          return;
-        }
-        importBookDataToHardcover(data);
-        showTemporaryMessage("Book data imported!");
-        logger.info("Book data imported into Hardcover");
-      };
+      const importBtn = UIComponents.createButton(
+        "⬇️ Import Book Data",
+        () => {
+          logger.info("Import button clicked");
+          const data = loadBookData();
+          if (!data || Object.keys(data).length === 0) {
+            showTemporaryMessage(
+              "No book data found. Please extract book data first."
+            );
+            logger.warn("Import attempted with no saved book data");
+            return;
+          }
+          importBookDataToHardcover(data);
+          showTemporaryMessage("Book data imported!");
+          logger.info("Book data imported into Hardcover");
+        },
+        { marginRight: "8px" }
+      );
 
       btnContainer.appendChild(importBtn);
     }
 
     // Button to copy JSON data to clipboard
-    const copyJsonBtn = document.createElement("button");
-    copyJsonBtn.textContent = "📋 Copy JSON";
-    copyJsonBtn.disabled = !hasSavedData;
-    copyJsonBtn.style.marginRight = "8px";
-
-    copyJsonBtn.onclick = () => {
-      try {
-        const jsonStr = JSON.stringify(loadBookData(), null, 2);
-        navigator.clipboard.writeText(jsonStr).then(() => {
-          showTemporaryMessage("Book JSON copied to clipboard.");
-        });
-      } catch (e) {
-        showTemporaryMessage("Failed to copy JSON.");
-        logger.error("Copy JSON failed:", e);
+    const copyJsonBtn = UIComponents.createButton(
+      "📋 Copy JSON",
+      () => {
+        try {
+          const jsonStr = JSON.stringify(loadBookData(), null, 2);
+          navigator.clipboard.writeText(jsonStr).then(() => {
+            showTemporaryMessage("Book JSON copied to clipboard.");
+          });
+        } catch (e) {
+          showTemporaryMessage("Failed to copy JSON.");
+          logger.error("Copy JSON failed:", e);
+        }
+      },
+      {
+        marginRight: "8px",
+        disabled: !hasSavedData,
       }
-    };
+    );
 
     btnContainer.appendChild(copyJsonBtn);
 
     // Button to refresh displayed book data in bubble
-    const refreshBtn = document.createElement("button");
-    refreshBtn.textContent = "🔄 Refresh";
-
-    refreshBtn.onclick = () => {
+    const refreshBtn = UIComponents.createButton("🔄 Refresh", () => {
       const refreshedData = loadBookData();
       if (refreshedData && Object.keys(refreshedData).length > 0) {
         updateContent(refreshedData);
@@ -1352,7 +1584,7 @@ function importBookDataToHardcover(data) {
         showTemporaryMessage("No book data found.");
         logger.info("No book data on refresh");
       }
-    };
+    });
 
     btnContainer.appendChild(refreshBtn);
 
@@ -1393,169 +1625,15 @@ function importBookDataToHardcover(data) {
       );
       if (oldFlexContainer) oldFlexContainer.remove();
 
-      // Create flex container to hold text and image side by side
-      const flexContainer = document.createElement("div");
-      flexContainer.className = "floatingBubbleFlexContainer";
-      Object.assign(flexContainer.style, {
-        display: "flex",
-        gap: "12px",
-        alignItems: "flex-start",
-        maxHeight: "250px",
-        overflow: "hidden",
-      });
+      // Use UI module to create book display container
+      const display = UIComponents.createBookDisplay(
+        data,
+        logger,
+        showTemporaryMessage
+      );
+      display.className = "floatingBubbleFlexContainer";
 
-      // Left pane: formatted text container
-      const textContainer = document.createElement("div");
-      Object.assign(textContainer.style, {
-        flex: "1",
-        background: "#eee",
-        padding: "6px",
-        borderRadius: "6px",
-        maxHeight: "250px",
-        overflowY: "auto",
-        fontFamily: "monospace",
-        fontSize: "12px",
-        userSelect: "none",
-      });
-
-      // Helper to prettify camelCase field names for display
-      const prettify = (str) =>
-        str
-          .replace(/([A-Z])/g, " $1") // split camelCase
-          .replace(/^./, (c) => c.toUpperCase()) // capitalize first letter
-          .trim();
-
-      // Populate text container with key-value pairs from data
-      Object.entries(data).forEach(([key, value]) => {
-        if (!value) return; // skip empty or falsy values
-
-        // Special formatting for audiobookDuration array
-        if (
-          key === "audiobookDuration" &&
-          Array.isArray(value) &&
-          value.length > 0
-        ) {
-          const dur = value[0]; // assume first duration object
-          const parts = [];
-          if (dur.hours)
-            parts.push(`${dur.hours} hour${dur.hours !== 1 ? "s" : ""}`);
-          if (dur.minutes)
-            parts.push(`${dur.minutes} minute${dur.minutes !== 1 ? "s" : ""}`);
-          if (dur.seconds)
-            parts.push(`${dur.seconds} second${dur.seconds !== 1 ? "s" : ""}`);
-          value = parts.join(", ");
-          if (!value) return;
-        } else if (Array.isArray(value)) {
-          // Format arrays to comma-separated strings
-          if (key === "contributors") {
-            value = value.map((c) => `${c.name} (${c.role})`).join(", ");
-          } else {
-            value = value.join(", ");
-          }
-          if (!value) return;
-        }
-
-        const fieldDiv = document.createElement("div");
-        fieldDiv.style.marginBottom = "4px";
-
-        const labelSpan = document.createElement("span");
-        labelSpan.textContent = `${prettify(key)}: `;
-        labelSpan.style.fontWeight = "bold";
-
-        const valueSpan = document.createElement("span");
-        valueSpan.textContent = value;
-        valueSpan.style.cursor = "pointer";
-        valueSpan.style.color = "#0055aa";
-        valueSpan.style.textDecoration = "underline";
-        valueSpan.title = "Click to copy";
-
-        // Copy field value to clipboard on click with logging
-        valueSpan.onclick = () => {
-          navigator.clipboard.writeText(value).then(() => {
-            logger.info(`Copied "${key}" to clipboard.`);
-            showTemporaryMessage(`Copied ${prettify(key)} to clipboard`);
-          });
-        };
-
-        fieldDiv.appendChild(labelSpan);
-        fieldDiv.appendChild(valueSpan);
-        textContainer.appendChild(fieldDiv);
-      });
-
-      flexContainer.appendChild(textContainer);
-
-      // Right pane: cover image and download link if cover URL exists
-      if (data.cover) {
-        const imgContainer = document.createElement("div");
-        imgContainer.id = "imgContainer";
-        Object.assign(imgContainer.style, {
-          width: "150px",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: "6px",
-          overflow: "hidden",
-        });
-
-        const link = document.createElement("a");
-        link.href = data.cover;
-        link.target = "_blank";
-        link.title = "Open cover image in new tab";
-        link.style.display = "block";
-        link.style.width = "100%";
-
-        const img = document.createElement("img");
-        img.src = data.cover;
-        img.alt = data.title || "Cover Image";
-        img.style.width = "100%";
-        img.style.borderRadius = "6px";
-        img.style.cursor = "pointer";
-
-        link.appendChild(img);
-        imgContainer.appendChild(link);
-
-        const downloadLink = document.createElement("a");
-        downloadLink.href = "#";
-        downloadLink.textContent = "⬇️ Download Cover";
-        Object.assign(downloadLink.style, {
-          color: "#0055aa",
-          textDecoration: "underline",
-          cursor: "pointer",
-          fontSize: "12px",
-          userSelect: "none",
-        });
-
-        // Download cover image on click with error handling and logging
-        downloadLink.onclick = async (e) => {
-          e.preventDefault();
-          try {
-            const response = await fetch(data.cover, { mode: "cors" });
-            if (!response.ok) throw new Error("Network response was not ok");
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-
-            const filename =
-              data.cover.split("/").pop().split("?")[0] || "cover.jpg";
-            a.download = filename;
-
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
-          } catch (err) {
-            alert("Failed to download image.");
-            logger.error("Image download failed:", err);
-          }
-        };
-
-        imgContainer.appendChild(downloadLink);
-
-        flexContainer.appendChild(imgContainer);
-      }
-
-      content.appendChild(flexContainer);
+      content.appendChild(display);
     }
   }
 

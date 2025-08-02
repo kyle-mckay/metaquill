@@ -11,95 +11,6 @@
   let lastUrl = location.href;
 
   /**
-   * Creates a floating bubble container in the bottom-right corner
-   * with a clickable header that toggles content visibility.
-   * Returns references to the bubble container and content area.
-   */
-  function createFloatingBubble() {
-    logger.debug("Creating floating bubble UI");
-
-    const bubble = document.createElement("div");
-    bubble.id = "floatingBubble";
-    Object.assign(bubble.style, {
-      position: "fixed",
-      bottom: "20px",
-      right: "20px",
-      width: "600px",
-      background: "#fff",
-      border: "1px solid #888",
-      borderRadius: "10px",
-      boxShadow: "0 4px 10px rgba(0,0,0,0.2)",
-      zIndex: 99999,
-      fontFamily: "sans-serif",
-      fontSize: "14px",
-      color: "#222",
-      userSelect: "none",
-      overflow: "hidden",
-      transition: "height 0.3s ease",
-      height: "40px", // start collapsed
-    });
-
-    // Create header bar with toggle functionality and icon
-    const header = document.createElement("div");
-    header.style.cssText = `
-      background: #0055aa;
-      color: #fff;
-      padding: 8px;
-      cursor: pointer;
-      font-weight: bold;
-      user-select: none;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    `;
-    header.textContent = "Book Metadata";
-
-    const toggleIcon = document.createElement("span");
-    toggleIcon.textContent = "▼"; // down arrow for collapsed state
-    toggleIcon.style.transition = "transform 0.3s ease";
-    header.appendChild(toggleIcon);
-
-    bubble.appendChild(header);
-
-    // Create content container, hidden by default (collapsed)
-    const content = document.createElement("div");
-    content.id = "floatingBubbleContent";
-    Object.assign(content.style, {
-      padding: "8px",
-      display: "none", // collapsed initially
-      maxHeight: "350px",
-      overflowY: "auto",
-      display: "flex",
-      gap: "12px",
-      flexWrap: "nowrap",
-      alignItems: "flex-start",
-    });
-
-    bubble.appendChild(content);
-
-    // Toggle content visibility on header click with logging
-    header.onclick = () => {
-      if (content.style.display === "none") {
-        content.style.display = "flex";
-        bubble.style.height = "auto";
-        toggleIcon.style.transform = "rotate(180deg)"; // arrow points up
-        logger.debug("Bubble expanded");
-      } else {
-        content.style.display = "none";
-        bubble.style.height = "40px";
-        toggleIcon.style.transform = "rotate(0deg)"; // arrow points down
-        logger.debug("Bubble collapsed");
-      }
-    };
-
-    document.body.appendChild(bubble);
-
-    logger.info("Floating bubble added to DOM");
-
-    return { bubble, content, header };
-  }
-
-  /**
    * Checks if the current page is a Hardcover import or edit page.
    * Uses a regex to match relevant URL patterns.
    * @returns {boolean} True if current page is a hardcover.app import/edit page.
@@ -135,22 +46,13 @@
     let hasSavedData = savedData && Object.keys(savedData).length > 0;
     logger.debug("Saved book data found:", hasSavedData);
 
-    const { bubble, content } = createFloatingBubble();
+    // Create floating bubble UI using UI module
+    const { bubble, content } = UIComponents.createFloatingBubbleUI(logger);
 
     // Message container for displaying temporary feedback to user
     let messageEl = content.querySelector("#floatingBubbleMessage");
     if (!messageEl) {
-      messageEl = document.createElement("div");
-      messageEl.id = "floatingBubbleMessage";
-      Object.assign(messageEl.style, {
-        marginBottom: "8px",
-        color: "#007700",
-        fontWeight: "bold",
-        minHeight: "18px",
-        transition: "opacity 0.3s ease",
-        opacity: "0",
-        userSelect: "none",
-      });
+      messageEl = UIComponents.createFloatingMessage();
       content.insertBefore(messageEl, content.firstChild);
     }
 
@@ -160,16 +62,7 @@
      * @param {number} duration - Duration in ms before fading out.
      */
     function showTemporaryMessage(msg, duration = 3000) {
-      messageEl.textContent = msg;
-      messageEl.style.opacity = "1";
-
-      clearTimeout(showTemporaryMessage.timeoutId);
-      showTemporaryMessage.timeoutId = setTimeout(() => {
-        messageEl.style.opacity = "0";
-        setTimeout(() => {
-          messageEl.textContent = "";
-        }, 300);
-      }, duration);
+      UIComponents.showMessage(messageEl, msg, duration);
     }
 
     // Container for buttons in the bubble UI
@@ -180,19 +73,19 @@
     if (module && module.detect()) {
       logger.debug("Extraction module detected for host:", host);
 
-      const extractBtn = document.createElement("button");
-      extractBtn.textContent = "📚 Extract Book Data";
-      extractBtn.style.marginRight = "8px";
-
-      extractBtn.onclick = async () => {
-        logger.info("Extract button clicked");
-        const data = await module.extract();
-        logger.debug("Extracted data:", data);
-        saveBookData(data);
-        updateContent(data);
-        showTemporaryMessage("Book data extracted and saved.");
-        copyJsonBtn.disabled = false; // enable copy button
-      };
+      const extractBtn = UIComponents.createButton(
+        "📚 Extract Book Data",
+        async () => {
+          logger.info("Extract button clicked");
+          const data = await module.extract();
+          logger.debug("Extracted data:", data);
+          saveBookData(data);
+          updateContent(data);
+          showTemporaryMessage("Book data extracted and saved.");
+          copyJsonBtn.disabled = false; // enable copy button
+        },
+        { marginRight: "8px" }
+      );
 
       btnContainer.appendChild(extractBtn);
     }
@@ -201,53 +94,52 @@
     if (isImportPage) {
       logger.debug("Hardcover import page detected");
 
-      const importBtn = document.createElement("button");
-      importBtn.textContent = "⬇️ Import Book Data";
-      importBtn.style.marginRight = "8px";
-
-      importBtn.onclick = async () => {
-        logger.info("Import button clicked");
-        const data = loadBookData();
-        if (!data || Object.keys(data).length === 0) {
-          showTemporaryMessage(
-            "No book data found. Please extract book data first."
-          );
-          logger.warn("Import attempted with no saved book data");
-          return;
-        }
-        importBookDataToHardcover(data);
-        showTemporaryMessage("Book data imported!");
-        logger.info("Book data imported into Hardcover");
-      };
+      const importBtn = UIComponents.createButton(
+        "⬇️ Import Book Data",
+        () => {
+          logger.info("Import button clicked");
+          const data = loadBookData();
+          if (!data || Object.keys(data).length === 0) {
+            showTemporaryMessage(
+              "No book data found. Please extract book data first."
+            );
+            logger.warn("Import attempted with no saved book data");
+            return;
+          }
+          importBookDataToHardcover(data);
+          showTemporaryMessage("Book data imported!");
+          logger.info("Book data imported into Hardcover");
+        },
+        { marginRight: "8px" }
+      );
 
       btnContainer.appendChild(importBtn);
     }
 
     // Button to copy JSON data to clipboard
-    const copyJsonBtn = document.createElement("button");
-    copyJsonBtn.textContent = "📋 Copy JSON";
-    copyJsonBtn.disabled = !hasSavedData;
-    copyJsonBtn.style.marginRight = "8px";
-
-    copyJsonBtn.onclick = () => {
-      try {
-        const jsonStr = JSON.stringify(loadBookData(), null, 2);
-        navigator.clipboard.writeText(jsonStr).then(() => {
-          showTemporaryMessage("Book JSON copied to clipboard.");
-        });
-      } catch (e) {
-        showTemporaryMessage("Failed to copy JSON.");
-        logger.error("Copy JSON failed:", e);
+    const copyJsonBtn = UIComponents.createButton(
+      "📋 Copy JSON",
+      () => {
+        try {
+          const jsonStr = JSON.stringify(loadBookData(), null, 2);
+          navigator.clipboard.writeText(jsonStr).then(() => {
+            showTemporaryMessage("Book JSON copied to clipboard.");
+          });
+        } catch (e) {
+          showTemporaryMessage("Failed to copy JSON.");
+          logger.error("Copy JSON failed:", e);
+        }
+      },
+      {
+        marginRight: "8px",
+        disabled: !hasSavedData,
       }
-    };
+    );
 
     btnContainer.appendChild(copyJsonBtn);
 
     // Button to refresh displayed book data in bubble
-    const refreshBtn = document.createElement("button");
-    refreshBtn.textContent = "🔄 Refresh";
-
-    refreshBtn.onclick = () => {
+    const refreshBtn = UIComponents.createButton("🔄 Refresh", () => {
       const refreshedData = loadBookData();
       if (refreshedData && Object.keys(refreshedData).length > 0) {
         updateContent(refreshedData);
@@ -260,7 +152,7 @@
         showTemporaryMessage("No book data found.");
         logger.info("No book data on refresh");
       }
-    };
+    });
 
     btnContainer.appendChild(refreshBtn);
 
@@ -301,169 +193,15 @@
       );
       if (oldFlexContainer) oldFlexContainer.remove();
 
-      // Create flex container to hold text and image side by side
-      const flexContainer = document.createElement("div");
-      flexContainer.className = "floatingBubbleFlexContainer";
-      Object.assign(flexContainer.style, {
-        display: "flex",
-        gap: "12px",
-        alignItems: "flex-start",
-        maxHeight: "250px",
-        overflow: "hidden",
-      });
+      // Use UI module to create book display container
+      const display = UIComponents.createBookDisplay(
+        data,
+        logger,
+        showTemporaryMessage
+      );
+      display.className = "floatingBubbleFlexContainer";
 
-      // Left pane: formatted text container
-      const textContainer = document.createElement("div");
-      Object.assign(textContainer.style, {
-        flex: "1",
-        background: "#eee",
-        padding: "6px",
-        borderRadius: "6px",
-        maxHeight: "250px",
-        overflowY: "auto",
-        fontFamily: "monospace",
-        fontSize: "12px",
-        userSelect: "none",
-      });
-
-      // Helper to prettify camelCase field names for display
-      const prettify = (str) =>
-        str
-          .replace(/([A-Z])/g, " $1") // split camelCase
-          .replace(/^./, (c) => c.toUpperCase()) // capitalize first letter
-          .trim();
-
-      // Populate text container with key-value pairs from data
-      Object.entries(data).forEach(([key, value]) => {
-        if (!value) return; // skip empty or falsy values
-
-        // Special formatting for audiobookDuration array
-        if (
-          key === "audiobookDuration" &&
-          Array.isArray(value) &&
-          value.length > 0
-        ) {
-          const dur = value[0]; // assume first duration object
-          const parts = [];
-          if (dur.hours)
-            parts.push(`${dur.hours} hour${dur.hours !== 1 ? "s" : ""}`);
-          if (dur.minutes)
-            parts.push(`${dur.minutes} minute${dur.minutes !== 1 ? "s" : ""}`);
-          if (dur.seconds)
-            parts.push(`${dur.seconds} second${dur.seconds !== 1 ? "s" : ""}`);
-          value = parts.join(", ");
-          if (!value) return;
-        } else if (Array.isArray(value)) {
-          // Format arrays to comma-separated strings
-          if (key === "contributors") {
-            value = value.map((c) => `${c.name} (${c.role})`).join(", ");
-          } else {
-            value = value.join(", ");
-          }
-          if (!value) return;
-        }
-
-        const fieldDiv = document.createElement("div");
-        fieldDiv.style.marginBottom = "4px";
-
-        const labelSpan = document.createElement("span");
-        labelSpan.textContent = `${prettify(key)}: `;
-        labelSpan.style.fontWeight = "bold";
-
-        const valueSpan = document.createElement("span");
-        valueSpan.textContent = value;
-        valueSpan.style.cursor = "pointer";
-        valueSpan.style.color = "#0055aa";
-        valueSpan.style.textDecoration = "underline";
-        valueSpan.title = "Click to copy";
-
-        // Copy field value to clipboard on click with logging
-        valueSpan.onclick = () => {
-          navigator.clipboard.writeText(value).then(() => {
-            logger.info(`Copied "${key}" to clipboard.`);
-            showTemporaryMessage(`Copied ${prettify(key)} to clipboard`);
-          });
-        };
-
-        fieldDiv.appendChild(labelSpan);
-        fieldDiv.appendChild(valueSpan);
-        textContainer.appendChild(fieldDiv);
-      });
-
-      flexContainer.appendChild(textContainer);
-
-      // Right pane: cover image and download link if cover URL exists
-      if (data.cover) {
-        const imgContainer = document.createElement("div");
-        imgContainer.id = "imgContainer";
-        Object.assign(imgContainer.style, {
-          width: "150px",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: "6px",
-          overflow: "hidden",
-        });
-
-        const link = document.createElement("a");
-        link.href = data.cover;
-        link.target = "_blank";
-        link.title = "Open cover image in new tab";
-        link.style.display = "block";
-        link.style.width = "100%";
-
-        const img = document.createElement("img");
-        img.src = data.cover;
-        img.alt = data.title || "Cover Image";
-        img.style.width = "100%";
-        img.style.borderRadius = "6px";
-        img.style.cursor = "pointer";
-
-        link.appendChild(img);
-        imgContainer.appendChild(link);
-
-        const downloadLink = document.createElement("a");
-        downloadLink.href = "#";
-        downloadLink.textContent = "⬇️ Download Cover";
-        Object.assign(downloadLink.style, {
-          color: "#0055aa",
-          textDecoration: "underline",
-          cursor: "pointer",
-          fontSize: "12px",
-          userSelect: "none",
-        });
-
-        // Download cover image on click with error handling and logging
-        downloadLink.onclick = async (e) => {
-          e.preventDefault();
-          try {
-            const response = await fetch(data.cover, { mode: "cors" });
-            if (!response.ok) throw new Error("Network response was not ok");
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-
-            const filename =
-              data.cover.split("/").pop().split("?")[0] || "cover.jpg";
-            a.download = filename;
-
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
-          } catch (err) {
-            alert("Failed to download image.");
-            logger.error("Image download failed:", err);
-          }
-        };
-
-        imgContainer.appendChild(downloadLink);
-
-        flexContainer.appendChild(imgContainer);
-      }
-
-      content.appendChild(flexContainer);
+      content.appendChild(display);
     }
   }
 
