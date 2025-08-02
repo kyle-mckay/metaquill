@@ -159,6 +159,56 @@ function htmlToTextWithLineBreaks(htmlElement) {
 }
 
 /**
+ * Deduplicates an array of authors (strings) or contributors (objects).
+ *
+ * - For authors (array of strings), it trims whitespace and removes duplicates based on name.
+ * - For contributors (array of objects with `name` and `role`), it deduplicates based on
+ *   a composite key of name + role, ignoring case and extra whitespace.
+ *
+ * @param {Array<string|Object>} arr - The array to deduplicate.
+ * @returns {Array} - A new deduplicated array.
+ */
+function dedupeObject(arr) {
+  const logger = createLogger("dedupeObject");
+  logger.debug(`Initialized with data: ${JSON.stringify(arr)}`);
+  if (!Array.isArray(arr)) {
+    logger.debug('Input is not an array');
+    return [];
+  }
+
+  if (arr.length === 0) {
+    logger.debug('Empty array, nothing to dedupe');
+    return [];
+  }
+
+  // Deduplicating authors (strings)
+  if (typeof arr[0] === 'string') {
+    logger.debug(`Deduplicating ${arr.length} author(s)`);
+    const deduped = [...new Set(arr.map(name => name.trim()))];
+    logger.debug(`Resulting author count: ${deduped.length}`);
+    return deduped;
+  }
+
+  // Deduplicating contributors (objects)
+  logger.debug(`Deduplicating ${arr.length} contributor(s)`);
+  const seen = new Set();
+  const deduped = [];
+
+  for (const obj of arr) {
+    const key = `${obj.name.trim().toLowerCase()}|${obj.role.trim().toLowerCase()}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(obj);
+    } else {
+      logger.debug(`Skipping duplicate: ${obj.name} (${obj.role})`);
+    }
+  }
+
+  logger.debug(`Resulting contributor count: ${deduped.length}`);
+  return deduped;
+}
+
+/**
  * Site-specific modules for detecting and extracting book data.
  * Each module provides:
  * - detect(): returns boolean if the current page matches the site structure.
