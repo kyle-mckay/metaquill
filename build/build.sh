@@ -2,7 +2,7 @@
 set -euo pipefail
 
 build_list_file="build/build_files.list"
-output_file="build/hardcover.user.js"
+output_file="hardcover.user.js"
 
 if [[ ! -f "$build_list_file" ]]; then
   echo "Build list file $build_list_file not found." >&2
