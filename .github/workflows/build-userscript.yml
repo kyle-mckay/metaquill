@@ -1,0 +1,48 @@
+name: Build Hardcover UserScript
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Setup Git for pushing
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Run verify.sh to check build files
+        id: verify
+        run: |
+          chmod +x ./build/verify.sh
+          ./build/verify.sh > verify_result.txt
+          cat verify_result.txt
+          echo "verify_result=$(cat verify_result.txt)" >> $GITHUB_OUTPUT
+
+      - name: Handle missing files (create PR)
+        if: steps.verify.outputs.verify_result == 'false'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          commit-message: Update build_files.list with missing source files
+          branch: update-build-files-list
+          title: Update build_files.list to include new source files
+          labels: patch
+          body: |
+            This PR updates the build_files.list to include new source files detected in the src/ directory.
+
+      - name: Run build.sh and push dist if verify passed
+        if: steps.verify.outputs.verify_result == 'true'
+        run: |
+          chmod +x ./build/build.sh
+          ./build/build.sh
+          git add ./build/hardcover.user.js
+          git commit -m "Build: Update hardcover.user.js on push to main" || echo "No changes to commit"
+          git push

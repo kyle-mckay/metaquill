@@ -1,0 +1,7 @@
+src/core/headers.js
+src/modules/utilities.js
+src/modules/ui.js
+src/extractors/amazon.js
+src/extractors/goodreads.js
+src/modules/hardcover.js
+src/core/main.js
