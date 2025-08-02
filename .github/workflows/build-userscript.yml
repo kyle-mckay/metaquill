@@ -6,6 +6,9 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,12 +22,26 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Wait for 20 seconds
-        run: sleep 20
+      - name: Get current release draft tag
+        id: get_draft
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const releases = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            const draftRelease = releases.data.find(r => r.draft);
+            if (!draftRelease) {
+              core.setOutput("tag", "");
+            } else {
+              core.setOutput("tag", draftRelease.tag_name);
+            }
 
-      - name: Pull latest main branch changes
+      - name: Write release tag to file
         run: |
-          git pull origin main
+          mkdir -p build
+          echo "${{ steps.get_draft.outputs.tag }}" > build/release.txt
 
       - name: Run verify.sh to check build files
         id: verify
@@ -50,6 +67,6 @@ jobs:
         run: |
           chmod +x ./build/build.sh
           ./build/build.sh
-          git add ./hardcover.user.js ./src/core/headers.js
+          git add ./hardcover.user.js ./src/core/headers.js ./build/release.txt
           git commit -m "Build: Update hardcover.user.js on push to main" || echo "No changes to commit"
           git push
