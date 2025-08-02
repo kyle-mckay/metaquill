@@ -19,6 +19,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+      - name: Wait for 20 seconds
+        run: sleep 20
+
+      - name: Pull latest main branch changes
+        run: |
+          git pull origin main
+
       - name: Run verify.sh to check build files
         id: verify
         run: |
