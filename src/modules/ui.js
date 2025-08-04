@@ -276,11 +276,11 @@ function showMessage(el, msg, duration = 3000) {
  * Shows key-value pairs on left and cover image + download on right.
  * Click on a value copies it to clipboard with logging and message.
  * @param {object} data Book metadata object to display
- * @param {object} logger Logger for informational messages
  * @param {function} showMessageFn Function to display messages
  * @returns {HTMLElement} Container div holding the entire display
  */
-function createBookDisplay(data, logger, showMessageFn) {
+function createBookDisplay(data, showMessageFn) {
+  const logger = createLogger("createBookDisplay");
   const container = document.createElement("div");
   container.className = "floatingBubbleFlexContainer";
   Object.assign(container.style, {
@@ -312,7 +312,24 @@ function createBookDisplay(data, logger, showMessageFn) {
   });
 
   Object.entries(data).forEach(([key, value]) => {
-    if (!value) return;
+    const isValidKey = Object.prototype.hasOwnProperty.call(bookSchema, key);
+
+    if (!isValidKey) {
+      logger.warn(
+        `Key "${key}" not found in bookSchema. Available keys: ${Object.keys(
+          bookSchema
+        ).join(", ")}`
+      );
+    }
+
+    // Explicitly skip null, undefined, empty string, or empty array
+    if (
+      value == null ||
+      value === "" ||
+      (Array.isArray(value) && value.length === 0)
+    ) {
+      return;
+    }
 
     if (key === "audiobookDuration" && Array.isArray(value) && value.length) {
       const dur = value[0];

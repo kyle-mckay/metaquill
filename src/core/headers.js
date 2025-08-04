@@ -11,6 +11,7 @@
 // @match        https://audible.ca/*
 // @include /^https:\/\/(www\.)?amazon\.[a-z.]+\/dp\/[A-Z0-9]{10}(?:[/?].*)?$/
 // @include /^https:\/\/(www\.)?amazon\.[a-z.]+\/[^\/]+\/dp\/[A-Z0-9]{10}(?:[/?].*)?$/
+// @include /^https:\/\/(www\.)?google\.[a-z.]+\/books(?:[/?].*)?$/
 // @icon         https://assets.hardcover.app/static/favicon.ico
 // @grant        GM_getValue
 // @grant        GM_setValue

@@ -3,5 +3,6 @@ src/modules/utilities.js
 src/modules/ui.js
 src/extractors/amazon.js
 src/extractors/goodreads.js
+src/extractors/googlebooks.js
 src/modules/hardcover.js
 src/core/main.js

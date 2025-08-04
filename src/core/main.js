@@ -33,10 +33,25 @@
     // Get normalized host for site module detection
     const rawHost = location.hostname.toLowerCase();
     logger.debug(`rawHost: '${rawHost}'`);
+
+    // Remove leading www.
     const host = rawHost.replace(/^www\./, "");
 
     // Normalize Amazon host to a generic key
-    const normalizedHost = host.includes("amazon.") ? "amazon" : host;
+    let normalizedHost = host.includes("amazon.") ? "amazon" : host;
+
+    // Normalize google books URLs to 'google'
+    if (
+      host.endsWith("google.com") ||
+      host.endsWith("google.ca") ||
+      host.endsWith("google.co.uk") ||
+      host.includes("google.")
+    ) {
+      if (location.pathname.startsWith("/books")) {
+        normalizedHost = "google";
+      }
+    }
+
     logger.debug(`normalizedHost: '${normalizedHost}'`);
 
     const module = siteModules[normalizedHost];
@@ -196,7 +211,6 @@
       // Use UI module to create book display container
       const display = UIComponents.createBookDisplay(
         data,
-        logger,
         showTemporaryMessage
       );
       display.className = "floatingBubbleFlexContainer";
