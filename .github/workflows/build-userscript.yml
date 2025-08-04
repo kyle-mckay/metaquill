@@ -29,6 +29,7 @@ jobs:
           retries: 20
           retry-delay-seconds: 6
           script: |
+            sleep 20
             for (let attempt = 0; attempt < 20; attempt++) {
               const releases = await github.rest.repos.listReleases({
                 owner: context.repo.owner,
