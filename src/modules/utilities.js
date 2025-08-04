@@ -55,7 +55,7 @@ const bookSchema = {
   headline: "", // Description headline field
   literaryType: "", // Fiction, Non-Fiction or 'Unknown or Not Applicable'
   bookCategory: "", // Book, Novella, Short Story, Graphic Novel, Fan Fiction, Research Paper, Poetry, Collection, Web Novel, Light Novel
-  compilation: false, // If it is a compilation of other books
+  compilation: "", // If it is a compilation of other books
   seriesName: "",
   seriesNumber: "",
   isbn10: "",
@@ -244,6 +244,26 @@ const siteModules = {
 
       const result = extractAmazon();
       logger.debug("extractAmazon() returned:", result);
+
+      return result;
+    },
+  },
+  google: {
+    detect() {
+      const logger = createLogger("siteModules.google.detect");
+      logger.debug("Running detection on google");
+      // TODO: Update found
+      const found = true;
+      logger.debug(`Detection result: ${found}`);
+
+      return found;
+    },
+    extract() {
+      const logger = createLogger("siteModules.google.extract");
+      logger.debug("Calling extractGoogle()");
+
+      const result = extractGoogle();
+      logger.debug("extractGoogle() returned:", result);
 
       return result;
     },
