@@ -4,7 +4,14 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'wiki/**'
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build'
+        required: true
+        default: 'main'
 
 permissions:
   contents: write
