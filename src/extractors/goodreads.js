@@ -42,7 +42,7 @@ async function extractGoodreads() {
   const coverEl =
     document.querySelector(".BookCover__image img.ResponsiveImage")?.src ||
     null;
-  data.cover = coverEl;
+  data.cover = await getHighResImageUrl(coverEl);
   logger.debug("Extracted cover:", coverEl);
 
   // Extract book title

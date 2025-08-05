@@ -50,7 +50,7 @@ async function extractAmazon() {
   logger.debug("Retreived series number:", data.seriesNumber);
 
   // Extract Cover
-  data.cover = getAmazonCover();
+  data.cover = await getHighResImageUrl(getAmazonCover());
   logger.debug(`Cover retrieved: ${data.cover}`);
 
   // Extract description
