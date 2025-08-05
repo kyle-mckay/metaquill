@@ -65,18 +65,8 @@ With `let currentLogLevel = LogLevel.DEBUG;`
 
 ## Installation
 
-### Tampermonkey
-
-1. Open your browser and install the Tampermonkey extension (available for Chrome, Firefox, Edge, etc.).
-2. After installing, click the Tampermonkey icon in your browser toolbar.
-3. Select **"Create a new script..."** from the menu.
-4. A code editor will open with some default template code.
-5. Delete all the default code and **paste the entire userscript code** [link to code](https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/hardcover.user.js) or open the `hardcover.user.js` file.
-6. Save the script (usually by clicking the disk icon or pressing `Ctrl+S` / `Cmd+S`).
-7. Visit a supported book page (e.g., Goodreads book page) or hardcover edit page and the script should trigger.
-    - You may need to toggle the script on from a supported page first before it executes. Refresh the page to trigger the re-load.
-
-No additional setup is required beyond this. Tampermonkey manages the script execution automatically based on the `@match` or `@include` rules in your script header.
+For full installation, see (Path TBD)
+- Tampermonkey:
 
 ## Development
 
