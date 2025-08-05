@@ -52,6 +52,11 @@
       }
     }
 
+    // Normalize StoryGraph host to 'storygraph'
+    if (host.includes("thestorygraph.com")) {
+      normalizedHost = "storygraph";
+    }
+
     logger.debug(`normalizedHost: '${normalizedHost}'`);
 
     const module = siteModules[normalizedHost];

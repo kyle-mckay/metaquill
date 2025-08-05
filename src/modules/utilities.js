@@ -359,6 +359,30 @@ const siteModules = {
       return result;
     },
   },
+  storygraph: {
+    detect() {
+      const logger = createLogger("siteModules.storygraph.detect");
+      logger.debug("Running detection on thestorygraph.com");
+
+      // Check for StoryGraph book page structure
+      const found = Boolean(
+        document.querySelector(".book-title-author-and-series h3") &&
+          document.querySelector(".book-cover img")
+      );
+
+      logger.debug(`Detection result: ${found}`);
+      return found;
+    },
+    extract() {
+      const logger = createLogger("siteModules.storygraph.extract");
+      logger.debug("Calling extractStoryGraph()");
+
+      const result = extractStoryGraph();
+      logger.debug("extractStoryGraph() returned:", result);
+
+      return result;
+    },
+  },
   // add other site modules here
 };
 
