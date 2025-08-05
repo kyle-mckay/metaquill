@@ -77,6 +77,95 @@ const bookSchema = {
 };
 
 /**
+ * Attempts to retrieve a higher resolution version of a given image URL.
+ * Handles general Amazon-style thumbnails and Goodreads-hosted images.
+ *
+ * - For Amazon images, removes size modifiers (e.g., `._SY75_`) to get original.
+ * - For Goodreads images, replaces the `i` suffix with `l` to request a large version.
+ * - If the Goodreads high-res URL fails to load (404), falls back to original URL.
+ *
+ * @param {string} src - The original image URL.
+ * @returns {Promise<string>} - A promise that resolves to the high-resolution image URL or original.
+ */
+/**
+ * Attempts to resolve the highest resolution version of a given image URL.
+ * Tries known transformations for Amazon and Goodreads, checks each image,
+ * and returns the URL of the largest image by pixel area.
+ *
+ * @param {string} src - The original image URL
+ * @returns {Promise<string>} - The URL of the highest resolution image
+ */
+async function getHighResImageUrl(src) {
+  const logger = createLogger("getHighResImageUrl");
+  logger.debug(`Original source URL: ${src}`);
+
+  const candidates = new Set();
+
+  // Add original URL
+  candidates.add(src);
+
+  // Amazon cleaned format (removes ._SY75_, etc.)
+  candidates.add(src.replace(/\._[^.]+(?=\.)/, ""));
+
+  // Goodreads fallback: remove 'compressed.photo.' if present
+  if (src.includes("goodreads.com")) {
+    // Base URLs for both with and without compressed.photo.
+    const baseUrls = [src, src.replace("compressed.photo.", "")];
+
+    const suffixes = ["i", "l", "m", ""]; // suffix variants
+
+    baseUrls.forEach((baseUrl) => {
+      const match = baseUrl.match(/(goodreads\.com\/books\/\d+)([ilm]?)\//);
+      if (match) {
+        const base = match[1];
+        const originalSuffix = match[2];
+
+        suffixes.forEach((suffix) => {
+          if (suffix !== originalSuffix) {
+            const variant = baseUrl.replace(
+              new RegExp(`${base}${originalSuffix}\\/`),
+              `${base}${suffix}/`
+            );
+            candidates.add(variant);
+          }
+        });
+      } else {
+        // If no suffix pattern found, just add the baseUrl as is.
+        candidates.add(baseUrl);
+      }
+    });
+  }
+
+  const urls = Array.from(candidates);
+
+  logger.debug("Attempting to find highest resolution cover...");
+  const tested = await Promise.all(
+    urls.map(
+      (url) =>
+        new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            logger.debug(
+              `Loaded: ${url} [${img.naturalWidth}x${img.naturalHeight}]`
+            );
+            resolve({ url, resolution: img.naturalWidth * img.naturalHeight });
+          };
+          img.onerror = () => {
+            logger.warn(`Failed to load: ${url}`);
+            resolve({ url, resolution: 0 });
+          };
+          img.src = url;
+        })
+    )
+  );
+
+  const best = tested.reduce((a, b) => (b.resolution > a.resolution ? b : a));
+
+  logger.debug(`Selected URL: ${best.url}`);
+  return best.url;
+}
+
+/**
  * Saves the given book data object to persistent storage using GM_setValue.
  * Logs each step including warnings when no data is provided and errors during serialization or saving.
  * @param {Object} data - Book data to be saved.
@@ -162,19 +251,19 @@ function dedupeObject(arr) {
   const logger = createLogger("dedupeObject");
   logger.debug(`Initialized with data: ${JSON.stringify(arr)}`);
   if (!Array.isArray(arr)) {
-    logger.debug('Input is not an array');
+    logger.debug("Input is not an array");
     return [];
   }
 
   if (arr.length === 0) {
-    logger.debug('Empty array, nothing to dedupe');
+    logger.debug("Empty array, nothing to dedupe");
     return [];
   }
 
   // Deduplicating authors (strings)
-  if (typeof arr[0] === 'string') {
+  if (typeof arr[0] === "string") {
     logger.debug(`Deduplicating ${arr.length} author(s)`);
-    const deduped = [...new Set(arr.map(name => name.trim()))];
+    const deduped = [...new Set(arr.map((name) => name.trim()))];
     logger.debug(`Resulting author count: ${deduped.length}`);
     return deduped;
   }
@@ -185,7 +274,9 @@ function dedupeObject(arr) {
   const deduped = [];
 
   for (const obj of arr) {
-    const key = `${obj.name.trim().toLowerCase()}|${obj.role.trim().toLowerCase()}`;
+    const key = `${obj.name.trim().toLowerCase()}|${obj.role
+      .trim()
+      .toLowerCase()}`;
     if (!seen.has(key)) {
       seen.add(key);
       deduped.push(obj);

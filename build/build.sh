@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Usage: ./build.sh [LOG_LEVEL]
+# Example: ./build.sh DEBUG
+LOG_LEVEL="${1:-INFO}"  # Default to INFO if no argument is provided
+
 build_list_file="build/build_files.list"
 output_file="hardcover.user.js"
 header_file="src/core/headers.js"
@@ -25,8 +29,8 @@ fi
 version=$(<"$version_file")
 version="${version//[$'\r\n']}"
 
-# Replace log level from DEBUG to INFO in public release
-sed -i.bak -E 's|(let currentLogLevel = LogLevel\.)DEBUG;|\1INFO;|' "$header_file"
+# Replace log level to INFO in public release
+sed -i.bak -E "s|(let currentLogLevel = LogLevel\.)[A-Z]+;|\1${LOG_LEVEL};|" "$header_file"
 
 # Replace version in @version line in header file with release draft version number
 sed -i.bak -E "s|^(\\s*//\\s*@version\\s+)[^ ]+|\1$version|" "$header_file"

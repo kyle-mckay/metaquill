@@ -399,10 +399,13 @@ function createBookDisplay(data, showMessageFn) {
     img.src = data.cover;
     img.alt = data.title || "Cover Image";
     Object.assign(img.style, {
-      width: "100%",
+      width: "100%", // full width of container (150px)
+      maxHeight: "200px", // limit height so it doesn't get too tall
+      height: "auto", // keep aspect ratio
       borderRadius: "6px",
       cursor: "pointer",
       userSelect: "none",
+      objectFit: "contain", // prevent cropping, keep image contained
     });
 
     link.appendChild(img);
