@@ -29,6 +29,7 @@ This userscript is designed to extract detailed book metadata from supported web
 
 - goodreads
 - amazon (.ca/.com/.uk/etc)
+- google (.ca/.com/etc) / books
 
 ## Usage
 
