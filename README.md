@@ -65,8 +65,8 @@ With `let currentLogLevel = LogLevel.DEBUG;`
 
 ## Installation
 
-For full installation, see (Path TBD)
-- Tampermonkey:
+For full installation
+- [Tampermonkey](https://github.com/kyle-mckay/hardcover-librarian-tampermonkey/wiki/Tampermonkey-Installation)
 
 ## Development
 
