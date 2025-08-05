@@ -584,11 +584,19 @@ function parseAmazonProductDetails(data) {
               break;
 
             case "asin":
+              
               if (!data.asin) {
                 data.asin = valueText;
                 logger.debug(`ASIN: ${data.asin}`);
               } else {
                 logger.debug(`Skipped asin: already set: ${data.asin}`);
+                break;
+              }
+              if (!data.sourceId) {
+                data.sourceId = valueText
+                logger.debug(`Source ID: ${data.sourceId}`);
+              } else {
+                logger.debug(`Skipped source id: already set: ${data.sourceId}`);
                 break;
               }
               break;

@@ -23,6 +23,9 @@ async function extractGoodreads() {
 
   const data = bookSchema;
 
+  data.sourceId = getGoodreadsBookId(window.location.href);
+  logger.debug(`Source ID: ${data.sourceId}`);
+
   // Expand "...more" contributors if present, to access full contributor list
   const moreContributorsBtn = document.querySelector(
     ".ContributorLinksList .Button__labelItem"
@@ -245,5 +248,17 @@ async function extractGoodreads() {
 
   logger.debug("Returning data object:", data);
   return data;
+}
+
+/**
+ * Extracts the Goodreads book ID from a Goodreads book URL.
+ *
+ * @param {string} url - The Goodreads book URL.
+ * @returns {string|null} - The extracted numeric book ID, or null if not found.
+ */
+function getGoodreadsBookId(url) {
+  const regex = /goodreads\.com\/book\/show\/(\d+)(?:[-/]|$)/i;
+  const match = url.match(regex);
+  return match ? match[1] : null;
 }
 
