@@ -16,6 +16,9 @@ async function extractGoogle() {
 
   let data = bookSchema;
 
+  data.sourceId = getGoogleBooksIdFromUrl(window.location.href);
+  logger.debug(`Source ID: ${data.sourceID}`);
+
   data.title = getGoogleBookTitle();
   logger.debug(`Title extracted: ${data.title}`);
 
@@ -49,10 +52,14 @@ async function extractGoogle() {
   data.authors = dedupeObject([...(data.authors || []), ...authors]);
   logger.debug(`Authors extracted: ${data.authors}`);
 
+  data.cover = getGoogleBooksCoverUrl(data.sourceId);
+  logger.debug(`URL Extracted: ${data.cover}`);
+
   // TODO Audiobooks?
 
   // TODO Other contributors?
 
+  logger.debug(`Returning book data:`, data);
   return data;
 }
 
@@ -421,6 +428,46 @@ function getGoogleBookAuthors() {
     logger.error("Error while extracting book authors", err);
     return [];
   }
+}
+
+/**
+ * Extracts the Google Books volume ID from a given URL.
+ * Supports localized domains and multiple URL formats.
+ *
+ * @param {string} url - The current page URL.
+ * @returns {string|null} - The extracted volume ID or null if not found.
+ */
+function getGoogleBooksIdFromUrl(url) {
+  const patterns = [
+    /books\/edition\/(?:[^/]+\/)?([A-Za-z0-9_-]{10,})/, // e.g., books/edition/_/PYsFzwEACAAJ
+    /books\?id=([A-Za-z0-9_-]{10,})/, // e.g., books?id=PYsFzwEACAAJ
+    /\/volume\/([A-Za-z0-9_-]{10,})/, // e.g., volume/PYsFzwEACAAJ
+  ];
+
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+
+  return null;
+}
+
+/**
+ * Constructs a Google Books cover image URL with maximum resolution.
+ * Uses the 'fife' parameter to force large image dimensions.
+ *
+ * @param {string} volumeId - The Google Books volume ID.
+ * @returns {string} - The full URL to the highest-resolution cover image.
+ */
+function getGoogleBooksCoverUrl(volumeId) {
+  if (!volumeId) return null;
+
+  const baseUrl = `https://books.google.com/books/publisher/content/images/frontcover/${volumeId}`;
+  const params = new URLSearchParams({
+    fife: "w1600-h2400", // High-resolution; adjust if needed
+  });
+
+  return `${baseUrl}?${params.toString()}`;
 }
 
 // #endregion
