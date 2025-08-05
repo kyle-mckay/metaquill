@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/hardcover.user.js
 // @downloadURL  https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/hardcover.user.js
 // @author       kyle-mckay
-// @version      v1.4.0
+// @version      v1.4.1
 // @description  Extract book metadata from supported sites like Goodreads and optionally inject into sites like Hardcovers.app for easier book creation.
 // @match        https://www.goodreads.com/*
 // @match        https://hardcover.app/*
@@ -109,6 +109,95 @@ const bookSchema = {
 };
 
 /**
+ * Attempts to retrieve a higher resolution version of a given image URL.
+ * Handles general Amazon-style thumbnails and Goodreads-hosted images.
+ *
+ * - For Amazon images, removes size modifiers (e.g., `._SY75_`) to get original.
+ * - For Goodreads images, replaces the `i` suffix with `l` to request a large version.
+ * - If the Goodreads high-res URL fails to load (404), falls back to original URL.
+ *
+ * @param {string} src - The original image URL.
+ * @returns {Promise<string>} - A promise that resolves to the high-resolution image URL or original.
+ */
+/**
+ * Attempts to resolve the highest resolution version of a given image URL.
+ * Tries known transformations for Amazon and Goodreads, checks each image,
+ * and returns the URL of the largest image by pixel area.
+ *
+ * @param {string} src - The original image URL
+ * @returns {Promise<string>} - The URL of the highest resolution image
+ */
+async function getHighResImageUrl(src) {
+  const logger = createLogger("getHighResImageUrl");
+  logger.debug(`Original source URL: ${src}`);
+
+  const candidates = new Set();
+
+  // Add original URL
+  candidates.add(src);
+
+  // Amazon cleaned format (removes ._SY75_, etc.)
+  candidates.add(src.replace(/\._[^.]+(?=\.)/, ""));
+
+  // Goodreads fallback: remove 'compressed.photo.' if present
+  if (src.includes("goodreads.com")) {
+    // Base URLs for both with and without compressed.photo.
+    const baseUrls = [src, src.replace("compressed.photo.", "")];
+
+    const suffixes = ["i", "l", "m", ""]; // suffix variants
+
+    baseUrls.forEach((baseUrl) => {
+      const match = baseUrl.match(/(goodreads\.com\/books\/\d+)([ilm]?)\//);
+      if (match) {
+        const base = match[1];
+        const originalSuffix = match[2];
+
+        suffixes.forEach((suffix) => {
+          if (suffix !== originalSuffix) {
+            const variant = baseUrl.replace(
+              new RegExp(`${base}${originalSuffix}\\/`),
+              `${base}${suffix}/`
+            );
+            candidates.add(variant);
+          }
+        });
+      } else {
+        // If no suffix pattern found, just add the baseUrl as is.
+        candidates.add(baseUrl);
+      }
+    });
+  }
+
+  const urls = Array.from(candidates);
+
+  logger.debug("Attempting to find highest resolution cover...");
+  const tested = await Promise.all(
+    urls.map(
+      (url) =>
+        new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            logger.debug(
+              `Loaded: ${url} [${img.naturalWidth}x${img.naturalHeight}]`
+            );
+            resolve({ url, resolution: img.naturalWidth * img.naturalHeight });
+          };
+          img.onerror = () => {
+            logger.warn(`Failed to load: ${url}`);
+            resolve({ url, resolution: 0 });
+          };
+          img.src = url;
+        })
+    )
+  );
+
+  const best = tested.reduce((a, b) => (b.resolution > a.resolution ? b : a));
+
+  logger.debug(`Selected URL: ${best.url}`);
+  return best.url;
+}
+
+/**
  * Saves the given book data object to persistent storage using GM_setValue.
  * Logs each step including warnings when no data is provided and errors during serialization or saving.
  * @param {Object} data - Book data to be saved.
@@ -194,19 +283,19 @@ function dedupeObject(arr) {
   const logger = createLogger("dedupeObject");
   logger.debug(`Initialized with data: ${JSON.stringify(arr)}`);
   if (!Array.isArray(arr)) {
-    logger.debug('Input is not an array');
+    logger.debug("Input is not an array");
     return [];
   }
 
   if (arr.length === 0) {
-    logger.debug('Empty array, nothing to dedupe');
+    logger.debug("Empty array, nothing to dedupe");
     return [];
   }
 
   // Deduplicating authors (strings)
-  if (typeof arr[0] === 'string') {
+  if (typeof arr[0] === "string") {
     logger.debug(`Deduplicating ${arr.length} author(s)`);
-    const deduped = [...new Set(arr.map(name => name.trim()))];
+    const deduped = [...new Set(arr.map((name) => name.trim()))];
     logger.debug(`Resulting author count: ${deduped.length}`);
     return deduped;
   }
@@ -217,7 +306,9 @@ function dedupeObject(arr) {
   const deduped = [];
 
   for (const obj of arr) {
-    const key = `${obj.name.trim().toLowerCase()}|${obj.role.trim().toLowerCase()}`;
+    const key = `${obj.name.trim().toLowerCase()}|${obj.role
+      .trim()
+      .toLowerCase()}`;
     if (!seen.has(key)) {
       seen.add(key);
       deduped.push(obj);
@@ -704,10 +795,13 @@ function createBookDisplay(data, showMessageFn) {
     img.src = data.cover;
     img.alt = data.title || "Cover Image";
     Object.assign(img.style, {
-      width: "100%",
+      width: "100%", // full width of container (150px)
+      maxHeight: "200px", // limit height so it doesn't get too tall
+      height: "auto", // keep aspect ratio
       borderRadius: "6px",
       cursor: "pointer",
       userSelect: "none",
+      objectFit: "contain", // prevent cropping, keep image contained
     });
 
     link.appendChild(img);
@@ -857,7 +951,7 @@ async function extractAmazon() {
   logger.debug("Retreived series number:", data.seriesNumber);
 
   // Extract Cover
-  data.cover = getAmazonCover();
+  data.cover = await getHighResImageUrl(getAmazonCover());
   logger.debug(`Cover retrieved: ${data.cover}`);
 
   // Extract description
@@ -1391,11 +1485,19 @@ function parseAmazonProductDetails(data) {
               break;
 
             case "asin":
+              
               if (!data.asin) {
                 data.asin = valueText;
                 logger.debug(`ASIN: ${data.asin}`);
               } else {
                 logger.debug(`Skipped asin: already set: ${data.asin}`);
+                break;
+              }
+              if (!data.sourceId) {
+                data.sourceId = valueText
+                logger.debug(`Source ID: ${data.sourceId}`);
+              } else {
+                logger.debug(`Skipped source id: already set: ${data.sourceId}`);
                 break;
               }
               break;
@@ -1554,6 +1656,9 @@ async function extractGoodreads() {
 
   const data = bookSchema;
 
+  data.sourceId = getGoodreadsBookId(window.location.href);
+  logger.debug(`Source ID: ${data.sourceId}`);
+
   // Expand "...more" contributors if present, to access full contributor list
   const moreContributorsBtn = document.querySelector(
     ".ContributorLinksList .Button__labelItem"
@@ -1573,7 +1678,7 @@ async function extractGoodreads() {
   const coverEl =
     document.querySelector(".BookCover__image img.ResponsiveImage")?.src ||
     null;
-  data.cover = coverEl;
+  data.cover = await getHighResImageUrl(coverEl);
   logger.debug("Extracted cover:", coverEl);
 
   // Extract book title
@@ -1778,6 +1883,18 @@ async function extractGoodreads() {
   return data;
 }
 
+/**
+ * Extracts the Goodreads book ID from a Goodreads book URL.
+ *
+ * @param {string} url - The Goodreads book URL.
+ * @returns {string|null} - The extracted numeric book ID, or null if not found.
+ */
+function getGoodreadsBookId(url) {
+  const regex = /goodreads\.com\/book\/show\/(\d+)(?:[-/]|$)/i;
+  const match = url.match(regex);
+  return match ? match[1] : null;
+}
+
 // ===== SECTION: Google Books Extraction =====
 // ===== FILE PATH: src/extractors/google.js ==========
 
@@ -1795,6 +1912,9 @@ async function extractGoogle() {
   logger.debug("Invoked extractGoogle()");
 
   let data = bookSchema;
+
+  data.sourceId = getGoogleBooksIdFromUrl(window.location.href);
+  logger.debug(`Source ID: ${data.sourceID}`);
 
   data.title = getGoogleBookTitle();
   logger.debug(`Title extracted: ${data.title}`);
@@ -1829,10 +1949,14 @@ async function extractGoogle() {
   data.authors = dedupeObject([...(data.authors || []), ...authors]);
   logger.debug(`Authors extracted: ${data.authors}`);
 
+  data.cover = getGoogleBooksCoverUrl(data.sourceId);
+  logger.debug(`URL Extracted: ${data.cover}`);
+
   // TODO Audiobooks?
 
   // TODO Other contributors?
 
+  logger.debug(`Returning book data:`, data);
   return data;
 }
 
@@ -2201,6 +2325,46 @@ function getGoogleBookAuthors() {
     logger.error("Error while extracting book authors", err);
     return [];
   }
+}
+
+/**
+ * Extracts the Google Books volume ID from a given URL.
+ * Supports localized domains and multiple URL formats.
+ *
+ * @param {string} url - The current page URL.
+ * @returns {string|null} - The extracted volume ID or null if not found.
+ */
+function getGoogleBooksIdFromUrl(url) {
+  const patterns = [
+    /books\/edition\/(?:[^/]+\/)?([A-Za-z0-9_-]{10,})/, // e.g., books/edition/_/PYsFzwEACAAJ
+    /books\?id=([A-Za-z0-9_-]{10,})/, // e.g., books?id=PYsFzwEACAAJ
+    /\/volume\/([A-Za-z0-9_-]{10,})/, // e.g., volume/PYsFzwEACAAJ
+  ];
+
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+
+  return null;
+}
+
+/**
+ * Constructs a Google Books cover image URL with maximum resolution.
+ * Uses the 'fife' parameter to force large image dimensions.
+ *
+ * @param {string} volumeId - The Google Books volume ID.
+ * @returns {string} - The full URL to the highest-resolution cover image.
+ */
+function getGoogleBooksCoverUrl(volumeId) {
+  if (!volumeId) return null;
+
+  const baseUrl = `https://books.google.com/books/publisher/content/images/frontcover/${volumeId}`;
+  const params = new URLSearchParams({
+    fife: "w1600-h2400", // High-resolution; adjust if needed
+  });
+
+  return `${baseUrl}?${params.toString()}`;
 }
 
 // #endregion
