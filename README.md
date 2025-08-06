@@ -1,8 +1,10 @@
 # MetaQuill
 
+> **Warning:** Very Early Development
+
 A book metadata extractor.
 
->WARNING: Very Early Development
+<img src="https://raw.githubusercontent.com/kyle-mckay/metaquill/refs/heads/main/assets/images/icon-128.ico" height="128" alt="MetaQuill Logo" />
 
 ## Overview
 
