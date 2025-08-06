@@ -15,4 +15,8 @@ Content to be added in near future
 
 ### Google Books (new)
 
->`http://google.(ca/com/etc)/books`
+>`https://google.(ca/com/etc)/books`
+
+### Storygraph
+
+>`https://app.storygraph.com`

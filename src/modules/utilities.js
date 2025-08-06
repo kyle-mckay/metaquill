@@ -362,15 +362,23 @@ const siteModules = {
   storygraph: {
     detect() {
       const logger = createLogger("siteModules.storygraph.detect");
-      logger.debug("Running detection on thestorygraph.com");
+      logger.debug("Running detection on storygraph");
 
-      // Check for StoryGraph book page structure
-      const found = Boolean(
-        document.querySelector(".book-title-author-and-series h3") &&
-          document.querySelector(".book-cover img")
+      // More comprehensive detection that doesn't rely on specific dynamic content
+      const hasBookStructure = Boolean(
+        document.querySelector(".book-title-author-and-series") ||
+          document.querySelector(".book-cover") ||
+          document.querySelector(".edition-info")
       );
 
-      logger.debug(`Detection result: ${found}`);
+      // Also check URL pattern as backup
+      const isBookPage = window.location.pathname.includes("/books/");
+
+      const found = hasBookStructure && isBookPage;
+
+      logger.debug(
+        `Detection result: ${found} (hasBookStructure: ${hasBookStructure}, isBookPage: ${isBookPage})`
+      );
       return found;
     },
     extract() {
