@@ -6,7 +6,7 @@ This directory contains scripts and configuration files for managing the build a
 
 ### `build.sh`
 
-- Concatenates source files listed in `build_files.list` into `hardcover.user.js` at the repository root.
+- Concatenates source files listed in `build_files.list` into `metaquill.user.js` at the repository root.
 - Intended to be run manually or automatically via CI (e.g., GitHub Actions).
 
 ### `verify.sh`
@@ -41,7 +41,7 @@ From the root of the repository:
 
 ```bash
 bash ./build/verify.sh     # Check if build_files.list is accurate
-bash ./build/build.sh      # Build hardcover.user.js from listed modules
+bash ./build/build.sh      # Build metaquill.user.js from listed modules
 ````
 
 ## CI Integration

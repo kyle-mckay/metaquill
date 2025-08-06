@@ -102,6 +102,6 @@ jobs:
         run: |
           chmod +x ./build/build.sh
           ./build/build.sh
-          git add ./hardcover.user.js ./src/core/headers.js ./build/release.txt
-          git commit -m "Build: Update hardcover.user.js on push to main" || echo "No changes to commit"
+          git add ./metaquill.user.js ./src/core/headers.js ./build/release.txt
+          git commit -m "Build: Update metaquill.user.js on push to main" || echo "No changes to commit"
           git push

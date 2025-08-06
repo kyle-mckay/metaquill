@@ -6,7 +6,7 @@ set -euo pipefail
 LOG_LEVEL="${1:-INFO}"  # Default to INFO if no argument is provided
 
 build_list_file="build/build_files.list"
-output_file="hardcover.user.js"
+output_file="metaquill.user.js"
 header_file="src/core/headers.js"
 version_file="build/release.txt"
 

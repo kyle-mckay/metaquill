@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Hardcover Librarian Tampermonkey
-// @namespace    https://github.com/kyle-mckay/hardcover-librarian-tampermonkey
-// @updateURL    https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/hardcover.user.js
-// @downloadURL  https://raw.githubusercontent.com/kyle-mckay/hardcover-librarian-tampermonkey/main/hardcover.user.js
+// @namespace    https://github.com/kyle-mckay/metaquill
+// @updateURL    https://raw.githubusercontent.com/kyle-mckay/metaquill/main/metaquill.user.js
+// @downloadURL  https://raw.githubusercontent.com/kyle-mckay/metaquill/main/metaquill.user.js
 // @author       kyle-mckay
 // @version      v1.5.0
 // @description  Extract book metadata from supported sites like Goodreads and optionally inject into sites like Hardcovers.app for easier book creation.
@@ -13,7 +13,7 @@
 // @include /^https:\/\/(www\.)?amazon\.[a-z.]+\/dp\/[A-Z0-9]{10}(?:[/?].*)?$/
 // @include /^https:\/\/(www\.)?amazon\.[a-z.]+\/[^\/]+\/dp\/[A-Z0-9]{10}(?:[/?].*)?$/
 // @include /^https:\/\/(www\.)?google\.[a-z.]+\/books(?:[/?].*)?$/
-// @icon         https://assets.hardcover.app/static/favicon.ico
+// @icon         https://github.com/kyle-mckay/metaquill/blob/main/assets/images/icon.jpg
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_addStyle
