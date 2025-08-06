@@ -76,7 +76,11 @@ jobs:
         if: steps.get_draft.outputs.tag != ''
         run: |
           mkdir -p build
-          echo "${{ steps.get_draft.outputs.tag }}" > build/release.txt
+          tag="${{ steps.get_draft.outputs.tag }}"
+          # Remove leading 'v' if present
+          clean_tag="${tag#v}"
+          echo "$clean_tag" > build/release.txt
+
 
       - name: Run verify.sh to check build files
         id: verify

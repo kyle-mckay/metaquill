@@ -1,7 +1,8 @@
-# Hardcover Librarian Tampermonkey
+# MetaQuill
+
+A book metadata extractor.
 
 >WARNING: Very Early Development
->Note: This is a personal repository, and is unafilliated with `hardcover.app`. I am just shamelessly using their fav icon for the script until I have the creative energy for something better. 
 
 ## Overview
 
