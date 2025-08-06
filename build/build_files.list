@@ -4,5 +4,6 @@ src/modules/ui.js
 src/extractors/amazon.js
 src/extractors/goodreads.js
 src/extractors/googlebooks.js
+src/extractors/storygraph.js
 src/modules/hardcover.js
 src/core/main.js
