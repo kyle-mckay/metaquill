@@ -52,6 +52,11 @@
       }
     }
 
+    // Normalize StoryGraph host to 'storygraph'
+    if (host.includes("thestorygraph.com")) {
+      normalizedHost = "storygraph";
+    }
+
     logger.debug(`normalizedHost: '${normalizedHost}'`);
 
     const module = siteModules[normalizedHost];
@@ -180,19 +185,6 @@
       bubble.style.height = "auto";
       logger.info("Displaying saved book data in bubble on load");
     }
-
-    // Observe DOM mutations to detect URL changes for SPA navigation
-    new MutationObserver(() => {
-      if (location.href !== lastUrl) {
-        lastUrl = location.href;
-        const newData = loadBookData();
-        if (newData && Object.keys(newData).length > 0) {
-          updateContent(newData);
-          copyJsonBtn.disabled = false;
-          logger.info("Content preview updated on URL change");
-        }
-      }
-    }).observe(document, { subtree: true, childList: true });
 
     /**
      * Updates the bubble's content area with formatted book metadata preview.

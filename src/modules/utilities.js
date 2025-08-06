@@ -359,6 +359,38 @@ const siteModules = {
       return result;
     },
   },
+  storygraph: {
+    detect() {
+      const logger = createLogger("siteModules.storygraph.detect");
+      logger.debug("Running detection on storygraph");
+
+      // More comprehensive detection that doesn't rely on specific dynamic content
+      const hasBookStructure = Boolean(
+        document.querySelector(".book-title-author-and-series") ||
+          document.querySelector(".book-cover") ||
+          document.querySelector(".edition-info")
+      );
+
+      // Also check URL pattern as backup
+      const isBookPage = window.location.pathname.includes("/books/");
+
+      const found = hasBookStructure && isBookPage;
+
+      logger.debug(
+        `Detection result: ${found} (hasBookStructure: ${hasBookStructure}, isBookPage: ${isBookPage})`
+      );
+      return found;
+    },
+    extract() {
+      const logger = createLogger("siteModules.storygraph.extract");
+      logger.debug("Calling extractStoryGraph()");
+
+      const result = extractStoryGraph();
+      logger.debug("extractStoryGraph() returned:", result);
+
+      return result;
+    },
+  },
   // add other site modules here
 };
 
