@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Hardcover Librarian Tampermonkey
+// @name         MetaQuill
 // @namespace    https://github.com/kyle-mckay/metaquill
 // @updateURL    https://raw.githubusercontent.com/kyle-mckay/metaquill/main/metaquill.user.js
 // @downloadURL  https://raw.githubusercontent.com/kyle-mckay/metaquill/main/metaquill.user.js
