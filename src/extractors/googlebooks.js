@@ -4,7 +4,9 @@
 /**
  * Main extractor function for Google Books pages.
  *
- * Aggregates book metadata by querying the DOM and calling helper functions.
+ * First attempts to fetch data from the Google Books API, then falls back to DOM
+ * extraction for any fields that weren't populated from the API response.
+ * Aggregates book metadata by querying the API and DOM, calling helper functions.
  * Populates a standard schema with title, ISBNs, publisher, language, page count,
  * description, reading format, and authors. Logs each extracted value.
  *
@@ -17,56 +19,379 @@ async function extractGoogle() {
   let data = bookSchema;
 
   data.sourceId = getGoogleBooksIdFromUrl(window.location.href);
-  logger.debug(`Source ID: ${data.sourceID}`);
+  logger.debug(`Source ID: ${data.sourceId}`);
 
-  data.title = getGoogleBookTitle();
-  logger.debug(`Title extracted: ${data.title}`);
+  // First, attempt to get data from the Google Books API
+  let apiData = null;
+  if (data.sourceId) {
+    try {
+      apiData = await fetchGoogleBooksApiData(data.sourceId);
+      logger.debug("Successfully fetched API data");
+    } catch (error) {
+      logger.warn(
+        "Failed to fetch API data, will rely on DOM extraction:",
+        error
+      );
+    }
+  }
 
+  // Map API data to our schema if available
+  if (apiData?.volumeInfo) {
+    mapApiDataToSchema(data, apiData.volumeInfo, apiData.saleInfo);
+    logger.debug("Mapped API data to schema");
+  }
+
+  // Cover extraction: Try fife method first (higher quality), fall back to API
+  // Note: We use the custom fife method instead of API imageLinks because
+  // it provides higher resolution images than the standard API response
+  if (!data.cover) {
+    data.cover = getGoogleBooksCoverUrl(data.sourceId);
+    logger.debug(`Cover URL from fife method: ${data.cover}`);
+  }
+  if (!data.cover && apiData?.volumeInfo?.imageLinks?.large) {
+    data.cover = apiData.volumeInfo.imageLinks.large;
+    logger.debug(`Cover URL from API fallback: ${data.cover}`);
+  }
+
+  // DOM fallbacks for fields not populated by API
   const root = document.querySelector(".r0Sd2e");
 
-  const { isbn10, isbn13 } = extractIsbns(root);
-  data.isbn10 = isbn10;
-  logger.debug(`ISBN-10 extracted: ${data.isbn10}`);
-  data.isbn13 = isbn13;
-  logger.debug(`ISBN-13 extracted: ${data.isbn13}`);
+  if (!data.title) {
+    data.title = getGoogleBookTitle();
+    logger.debug(`Title from DOM: ${data.title}`);
+  }
 
+  if (!data.isbn10 || !data.isbn13) {
+    const { isbn10, isbn13 } = extractIsbns(root);
+    if (!data.isbn10) data.isbn10 = isbn10;
+    if (!data.isbn13) data.isbn13 = isbn13;
+    logger.debug(
+      `ISBNs from DOM - ISBN-10: ${data.isbn10}, ISBN-13: ${data.isbn13}`
+    );
+  }
+
+  // Release date: DOM first (more detailed), API fallback
   data.releaseDate = getGoogleBookReleaseDate();
-  logger.debug(`Published date extracted: ${data.releaseDate}`);
+  if (!data.releaseDate && apiData?.volumeInfo?.publishedDate) {
+    data.releaseDate = apiData.volumeInfo.publishedDate;
+    logger.debug(`Release date from API fallback: ${data.releaseDate}`);
+  }
+  logger.debug(`Final release date: ${data.releaseDate}`);
 
-  data.publisher = getGoogleBookPublisher();
-  logger.debug(`Publisher extracted: ${data.publisher}`);
+  if (!data.publisher) {
+    data.publisher = getGoogleBookPublisher();
+    logger.debug(`Publisher from DOM: ${data.publisher}`);
+  }
 
-  data.releaseLanguage = getGoogleBookLanguage();
-  logger.debug(`Release language extracted: ${data.releaseLanguage}`);
+  if (!data.releaseLanguage) {
+    data.releaseLanguage = getGoogleBookLanguage();
+    logger.debug(`Language from DOM: ${data.releaseLanguage}`);
+  }
 
-  data.pageCount = getGoogleBookPageCount();
-  logger.debug(`Page count extracted: ${data.pageCount}`);
+  if (!data.pageCount) {
+    data.pageCount = getGoogleBookPageCount();
+    logger.debug(`Page count from DOM: ${data.pageCount}`);
+  }
 
-  data.description = getGoogleBookDescription();
-  logger.debug(`Description extracted: ${data.description}`);
+  if (!data.description) {
+    data.description = getGoogleBookDescription();
+    logger.debug(`Description from DOM: ${data.description}`);
+  }
 
-  const { readingFormat, editionInfo } = getGoogleBookReadingFormat();
-  data.editionInfo = editionInfo;
-  logger.debug(`Edition info extracted: ${data.editionInfo}`);
-  data.readingFormat = readingFormat;;
-  logger.debug(`Reading format extracted: ${data.readingFormat}`);
+  if (!data.readingFormat || !data.editionInfo) {
+    const { readingFormat, editionInfo } = getGoogleBookReadingFormat();
+    if (!data.readingFormat) data.readingFormat = readingFormat;
+    if (!data.editionInfo) data.editionInfo = editionInfo;
+    logger.debug(`Reading format from DOM: ${data.readingFormat}`);
+    logger.debug(`Edition info from DOM: ${data.editionInfo}`);
+  }
 
-  const authors = getGoogleBookAuthors();
-  data.authors = dedupeObject([...(data.authors || []), ...authors]);
-  logger.debug(`Authors extracted: ${data.authors}`);
-
-  data.cover = getGoogleBooksCoverUrl(data.sourceId);
-  logger.debug(`URL Extracted: ${data.cover}`);
+  if (!data.authors?.length) {
+    const authors = getGoogleBookAuthors();
+    data.authors = dedupeObject([...(data.authors || []), ...authors]);
+    logger.debug(`Authors from DOM: ${data.authors}`);
+  }
 
   // TODO Audiobooks?
-
   // TODO Other contributors?
+  // TODO Series name extraction (not available in API or easily parseable from DOM)
 
   logger.debug(`Returning book data:`, data);
   return data;
 }
 
-// #region Google Book Helperrs
+/**
+ * Fetches book data from the Google Books API.
+ *
+ * @param {string} volumeId - The Google Books volume ID.
+ * @returns {Promise<object>} - The API response data.
+ * @throws {Error} - If the API request fails.
+ */
+async function fetchGoogleBooksApiData(volumeId) {
+  const logger = createLogger("fetchGoogleBooksApiData");
+  const apiUrl = `https://www.googleapis.com/books/v1/volumes/${volumeId}`;
+
+  logger.debug(`Fetching API data from: ${apiUrl}`);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+  try {
+    const response = await fetch(apiUrl, {
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}`);
+    }
+
+    const data = await response.json();
+    logger.debug("API data fetched successfully");
+    return data;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    logger.error("Failed to fetch API data:", error);
+    throw error;
+  }
+}
+
+/**
+ * Maps Google Books API data to our book schema.
+ *
+ * @param {object} data - The book schema object to populate.
+ * @param {object} volumeInfo - The volumeInfo section from API response.
+ * @param {object} saleInfo - The saleInfo section from API response.
+ */
+function mapApiDataToSchema(data, volumeInfo, saleInfo) {
+  const logger = createLogger("mapApiDataToSchema");
+
+  // Basic info
+  if (volumeInfo.title) {
+    data.title = volumeInfo.title;
+    logger.debug(`API title: ${data.title}`);
+  }
+
+  if (volumeInfo.subtitle) {
+    data.subtitle = volumeInfo.subtitle;
+    logger.debug(`API subtitle: ${data.subtitle}`);
+  }
+
+  if (volumeInfo.description) {
+    // Remove HTML tags from description
+    data.description = volumeInfo.description.replace(/<[^>]*>/g, "");
+    logger.debug(`API description: ${data.description.slice(0, 100)}...`);
+  }
+
+  // Authors
+  if (volumeInfo.authors?.length) {
+    data.authors = [...volumeInfo.authors];
+    logger.debug(`API authors: ${data.authors.join(", ")}`);
+  }
+
+  // Publisher and dates
+  if (volumeInfo.publisher) {
+    data.publisher = volumeInfo.publisher;
+    logger.debug(`API publisher: ${data.publisher}`);
+  }
+
+  // Note: Release date will be handled by DOM first approach in main function
+
+  // Language
+  if (volumeInfo.language) {
+    data.releaseLanguage = volumeInfo.language;
+    logger.debug(`API language: ${data.releaseLanguage}`);
+  }
+
+  // Page count
+  if (volumeInfo.pageCount) {
+    data.pageCount = volumeInfo.pageCount;
+    logger.debug(`API page count: ${data.pageCount}`);
+  }
+
+  // ISBNs
+  if (volumeInfo.industryIdentifiers?.length) {
+    for (const identifier of volumeInfo.industryIdentifiers) {
+      if (identifier.type === "ISBN_10") {
+        data.isbn10 = identifier.identifier;
+        logger.debug(`API ISBN-10: ${data.isbn10}`);
+      } else if (identifier.type === "ISBN_13") {
+        data.isbn13 = identifier.identifier;
+        logger.debug(`API ISBN-13: ${data.isbn13}`);
+      }
+    }
+  }
+
+  // Reading format
+  const readingFormat = determineReadingFormat(volumeInfo, saleInfo);
+  if (readingFormat) {
+    data.readingFormat = readingFormat;
+    logger.debug(`API reading format: ${data.readingFormat}`);
+  }
+
+  // Book category mapping from API categories
+  const bookCategory = mapApiCategoriesToBookCategory(volumeInfo.categories);
+  if (bookCategory) {
+    data.bookCategory = bookCategory;
+    logger.debug(`API book category: ${data.bookCategory}`);
+  }
+
+  // Literary type mapping from API categories
+  const literaryType = mapApiCategoriesToLiteraryType(volumeInfo.categories);
+  if (literaryType) {
+    data.literaryType = literaryType;
+    logger.debug(`API literary type: ${data.literaryType}`);
+  }
+
+  // Series information
+  if (volumeInfo.seriesInfo?.bookDisplayNumber) {
+    data.seriesNumber = volumeInfo.seriesInfo.bookDisplayNumber.toString();
+    logger.debug(`API series number: ${data.seriesNumber}`);
+  }
+}
+
+/**
+ * Determines reading format from API data.
+ *
+ * @param {object} volumeInfo - The volumeInfo from API.
+ * @param {object} saleInfo - The saleInfo from API.
+ * @returns {string} - The reading format.
+ */
+function determineReadingFormat(volumeInfo, saleInfo) {
+  const logger = createLogger("determineReadingFormat");
+
+  // Check if it's an ebook
+  if (saleInfo?.isEbook === true || volumeInfo?.readingModes?.text === true) {
+    logger.debug("Determined as E-Book from API data");
+    return "E-Book";
+  }
+
+  // For now, assume physical book if not ebook
+  // Audiobook detection would need additional logic or DOM fallback
+  if (volumeInfo?.printType === "BOOK") {
+    logger.debug("Determined as Physical Book from API data");
+    return "Physical Book";
+  }
+
+  logger.warn("Could not determine reading format from API data");
+  return "";
+}
+
+/**
+ * Maps Google Books API categories to literary type.
+ *
+ * @param {string[]} categories - Array of category strings from API.
+ * @returns {string} - Mapped literary type: 'Fiction', 'Non-Fiction', or 'Unknown or Not Applicable'.
+ */
+function mapApiCategoriesToLiteraryType(categories) {
+  const logger = createLogger("mapApiCategoriesToLiteraryType");
+  if (!categories?.length) {
+    logger.warn("No categories available for literary type mapping");
+    return "";
+  }
+  const categoryString = categories.join(" ").toLowerCase();
+
+  // Check for fiction indicators
+  if (
+    categoryString.includes("fiction") &&
+    !categoryString.includes("non-fiction")
+  ) {
+    logger.debug(`Category indicates Fiction: ${categoryString}`);
+    return "Fiction";
+  }
+
+  // Check for non-fiction indicators
+  if (
+    categoryString.includes("non-fiction") ||
+    categoryString.includes("nonfiction") ||
+    categoryString.includes("biography") ||
+    categoryString.includes("autobiography") ||
+    categoryString.includes("memoir") ||
+    categoryString.includes("history") ||
+    categoryString.includes("science") ||
+    categoryString.includes("reference") ||
+    categoryString.includes("self-help") ||
+    categoryString.includes("business") ||
+    categoryString.includes("politics") ||
+    categoryString.includes("philosophy") ||
+    categoryString.includes("psychology") ||
+    categoryString.includes("religion") ||
+    categoryString.includes("health") ||
+    categoryString.includes("cooking") ||
+    categoryString.includes("travel") ||
+    categoryString.includes("true crime") ||
+    categoryString.includes("education") ||
+    categoryString.includes("parenting") ||
+    categoryString.includes("crafts") ||
+    categoryString.includes("medical") ||
+    categoryString.includes("law") ||
+    categoryString.includes("economics") ||
+    categoryString.includes("sociology") ||
+    categoryString.includes("anthropology")
+  ) {
+    logger.debug(`Category indicates Non-Fiction: ${categoryString}`);
+    return "Non-Fiction";
+  }
+
+  // Default if unclear
+  logger.warn("Unable to determine literary type");
+  return "";
+}
+
+/**
+ * Maps Google Books API categories to our book category schema.
+ *
+ * @param {string[]} categories - Array of category strings from API.
+ * @returns {string} - Mapped book category.
+ */
+function mapApiCategoriesToBookCategory(categories) {
+  //TODO Convert to global function for reuse across extractors
+  const logger = createLogger("mapApiCategoriesToBookCategory");
+  if (!categories?.length) {
+    logger.warn("No categories provided from API");
+    return "";
+  }
+
+  const categoryString = categories.join(" ").toLowerCase();
+  logger.debug(`Processing categories: ${categoryString}`);
+
+  // Check for specific types in order of specificity
+  let bookCategory = null;
+  if (categoryString.includes("light novel")) {
+    logger.debug("Determined as Light Novel from API categories");
+    bookCategory = "Light Novel";
+  } else if (
+    categoryString.includes("graphic novel") ||
+    categoryString.includes("comics") ||
+    categoryString.includes("manga")
+  ) {
+    bookCategory = "Graphic Novel";
+  } else if (categoryString.includes("poetry")) {
+    bookCategory = "Poetry";
+  } else if (categoryString.includes("novella")) {
+    bookCategory = "Novella";
+  } else if (categoryString.includes("short story")) {
+    bookCategory = "Short Story";
+  } else if (categoryString.includes("collection")) {
+    bookCategory = "Collection";
+  }
+
+  // Default to Book for most cases
+  if (!bookCategory) {
+    logger.debug("Defaulted to Book from API categories");
+    return "Book";
+  } else {
+    // Return the determined category
+    logger.debug(`Mapped book category: ${bookCategory}`);
+    return bookCategory;
+  }
+}
+
+// #region Google Book Helpers (DOM-based fallbacks)
 
 /**
  * Extracts the book title from the Google Books page.
@@ -112,7 +437,7 @@ function findContainerByLabel(rootElement, label) {
 }
 
 /**
- * Retrieves text from a container’s value span.
+ * Retrieves text from a container's value span.
  *
  * @param {HTMLElement|null} container
  * @returns {string|null}
