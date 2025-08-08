@@ -38,8 +38,6 @@ In order to extract book metadata, you first need to be on a [Supported Site](./
 
 ### Gather DEBUG Information
 
->Instructions to be written in more detail
-
 To gather debug information on the script's performance, you need to first change is log settings
 
 **Enable DEBUG in Tampermonkey:**

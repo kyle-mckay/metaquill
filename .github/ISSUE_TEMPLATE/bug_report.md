@@ -33,7 +33,6 @@ Enter the version number of the script you are currently running:
 
 If **Yes**, provide a direct link to the page you were trying to parse:
 ```
-
 <URL here>
 ```
 
@@ -41,15 +40,14 @@ If **Yes**, provide a direct link to the page you were trying to parse:
 
 ## JSON Dump
 
-Paste the JSON dump from the script output:
->See [wiki](https://github.com/kyle-mckay/metaquill/wiki/Usage) for the instructions on copying this data.
+Paste the **full** JSON dump from the script output:
+>See [wiki](https://github.com/kyle-mckay/metaquill/wiki/Usage#use-the-copy-json-button) for the instructions on copying this data.
 
 ```json
 <!-- Example:
 {
   "title": "Haikyu!!, Vol. 2",
-  "subtitle": "The View From The Top",
-  ...
+  "subtitle": "The View From The Top"
 }
 -->
 ```
