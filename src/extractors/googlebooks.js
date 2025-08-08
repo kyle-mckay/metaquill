@@ -455,6 +455,7 @@ function getGoogleBooksIdFromUrl(url) {
 /**
  * Constructs a Google Books cover image URL with maximum resolution.
  * Uses the 'fife' parameter to force large image dimensions.
+ * Dynamically uses the current domain to avoid CORS issues.
  *
  * @param {string} volumeId - The Google Books volume ID.
  * @returns {string} - The full URL to the highest-resolution cover image.
@@ -462,7 +463,11 @@ function getGoogleBooksIdFromUrl(url) {
 function getGoogleBooksCoverUrl(volumeId) {
   if (!volumeId) return null;
 
-  const baseUrl = `https://books.google.com/books/publisher/content/images/frontcover/${volumeId}`;
+  // Get the current domain from the page we're on
+  const currentDomain = window.location.hostname; // e.g., "www.google.ca" or "books.google.com"
+  const protocol = window.location.protocol; // "https:"
+  
+  const baseUrl = `${protocol}//${currentDomain}/books/publisher/content/images/frontcover/${volumeId}`;
   const params = new URLSearchParams({
     fife: "w1600-h2400", // High-resolution; adjust if needed
   });
