@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/kyle-mckay/metaquill/main/metaquill.user.js
 // @downloadURL  https://raw.githubusercontent.com/kyle-mckay/metaquill/main/metaquill.user.js
 // @author       kyle-mckay
-// @version      1.5.1
+// @version      1.6.0
 // @description  Extract book metadata from supported sites like Goodreads and optionally inject into sites like Hardcovers.app for easier book creation.
 // @match        https://www.goodreads.com/*
 // @match        https://hardcover.app/*
@@ -29,6 +29,6 @@ const LogLevel = {
   DEBUG: 3,
 };
 
-let currentLogLevel = LogLevel.DEBUG; // Change this to control global verbosity
+let currentLogLevel = LogLevel.INFO; // Change this to control global verbosity
 let bubbleRefresh = 2000; // The number of miliseconds the bubble refreshes the URL. Allows buttons to show/hide dynamically during normal navigation.
 
