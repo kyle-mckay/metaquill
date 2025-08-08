@@ -81,11 +81,11 @@ function log(level, ...args) {
  * This serves as the standardized data container for book extraction results.
  */
 const bookSchema = {
-  sourceId: "", // The source ID from the extracted site (Goodreads, Amazon, Google Books, etc.)
   title: "",
   subtitle: "",
   urlSlug: "",
   headline: "", // Description headline field
+  description: "", // Multi text book description
   literaryType: "", // Fiction, Non-Fiction or 'Unknown or Not Applicable'
   bookCategory: "", // Book, Novella, Short Story, Graphic Novel, Fan Fiction, Research Paper, Poetry, Collection, Web Novel, Light Novel
   compilation: "", // If it is a compilation of other books
@@ -94,6 +94,7 @@ const bookSchema = {
   isbn10: "",
   isbn13: "",
   asin: "",
+  sourceId: "", // The source ID from the extracted site (Goodreads, Amazon, Google Books, etc.)
   cover: "", // Image URL
   authors: [], // Array of authors
   contributors: [], // Array of contributors and their role
@@ -106,7 +107,6 @@ const bookSchema = {
   releaseDate: "",
   releaseLanguage: "",
   releaseCountry: "",
-  description: "", // Multi text book description
 };
 
 /**
@@ -775,6 +775,15 @@ function createBookDisplay(data, showMessageFn) {
         key === "contributors"
           ? value.map((c) => `${c.name} (${c.role})`).join(", ")
           : value.join(", ");
+    }
+
+    // Limit description to 100 characters
+    if (
+      key === "description" &&
+      typeof value === "string" &&
+      value.length > 100
+    ) {
+      value = value.substring(0, 100) + "... (full description redacted due to length)";
     }
 
     const div = document.createElement("div");
@@ -2034,7 +2043,10 @@ async function extractGoogle() {
   data.description = getGoogleBookDescription();
   logger.debug(`Description extracted: ${data.description}`);
 
-  data.readingFormat = getGoogleBookReadingFormat();
+  const { readingFormat, editionInfo } = getGoogleBookReadingFormat();
+  data.editionInfo = editionInfo;
+  logger.debug(`Edition info extracted: ${data.editionInfo}`);
+  data.readingFormat = readingFormat;;
   logger.debug(`Reading format extracted: ${data.readingFormat}`);
 
   const authors = getGoogleBookAuthors();
@@ -2363,7 +2375,7 @@ function getGoogleBookReadingFormat() {
 
     if (!formatContainer) {
       logger.warn("Reading format container not found.");
-      return "";
+      return { readingFormat: "", editionInfo: "" };
     }
 
     const formatValueEl = formatContainer.querySelector(
@@ -2371,7 +2383,7 @@ function getGoogleBookReadingFormat() {
     );
     if (!formatValueEl) {
       logger.warn("Reading format value element not found.");
-      return "";
+      return { readingFormat: "", editionInfo: "" };
     }
 
     const rawFormat = formatValueEl.textContent.trim();
@@ -2379,10 +2391,10 @@ function getGoogleBookReadingFormat() {
 
     const normalizedFormat = normalizeReadingFormat(rawFormat);
     logger.debug(`Normalized reading format: ${normalizedFormat}`);
-    return normalizedFormat;
+    return { readingFormat: normalizedFormat, editionInfo: rawFormat };
   } catch (error) {
     logger.error("Error extracting reading format:", error);
-    return "";
+    return { readingFormat: "", editionInfo: "" };
   }
 }
 
@@ -2455,7 +2467,7 @@ function getGoogleBooksCoverUrl(volumeId) {
   // Get the current domain from the page we're on
   const currentDomain = window.location.hostname; // e.g., "www.google.ca" or "books.google.com"
   const protocol = window.location.protocol; // "https:"
-  
+
   const baseUrl = `${protocol}//${currentDomain}/books/publisher/content/images/frontcover/${volumeId}`;
   const params = new URLSearchParams({
     fife: "w1600-h2400", // High-resolution; adjust if needed

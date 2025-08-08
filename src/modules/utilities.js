@@ -48,11 +48,11 @@ function log(level, ...args) {
  * This serves as the standardized data container for book extraction results.
  */
 const bookSchema = {
-  sourceId: "", // The source ID from the extracted site (Goodreads, Amazon, Google Books, etc.)
   title: "",
   subtitle: "",
   urlSlug: "",
   headline: "", // Description headline field
+  description: "", // Multi text book description
   literaryType: "", // Fiction, Non-Fiction or 'Unknown or Not Applicable'
   bookCategory: "", // Book, Novella, Short Story, Graphic Novel, Fan Fiction, Research Paper, Poetry, Collection, Web Novel, Light Novel
   compilation: "", // If it is a compilation of other books
@@ -61,6 +61,7 @@ const bookSchema = {
   isbn10: "",
   isbn13: "",
   asin: "",
+  sourceId: "", // The source ID from the extracted site (Goodreads, Amazon, Google Books, etc.)
   cover: "", // Image URL
   authors: [], // Array of authors
   contributors: [], // Array of contributors and their role
@@ -73,7 +74,6 @@ const bookSchema = {
   releaseDate: "",
   releaseLanguage: "",
   releaseCountry: "",
-  description: "", // Multi text book description
 };
 
 /**
