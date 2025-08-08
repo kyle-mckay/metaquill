@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/kyle-mckay/metaquill/main/metaquill.user.js
 // @downloadURL  https://raw.githubusercontent.com/kyle-mckay/metaquill/main/metaquill.user.js
 // @author       kyle-mckay
-// @version      1.5.1
+// @version      1.5.2
 // @description  Extract book metadata from supported sites like Goodreads and optionally inject into sites like Hardcovers.app for easier book creation.
 // @match        https://www.goodreads.com/*
 // @match        https://hardcover.app/*
@@ -1143,6 +1143,8 @@ function getAmazonSeries() {
  * edition format, edition-specific info, and release date by parsing the
  * `#productSubtitle`, `#productBinding`, and `#productVersion` elements.
  *
+ * Handles various subtitle formats with or without delimiter characters.
+ *
  * Uses structured logging to capture debug and error context for troubleshooting.
  *
  * @returns {Object} An object containing:
@@ -1169,45 +1171,121 @@ function parseAmazonSubtitle() {
       const subtitleText = subtitleEl.textContent.trim();
       logger.debug(`Subtitle extracted: ${subtitleText}`);
 
-      const parts = subtitleText.split("–").map((part) => part.trim());
+      // Try multiple delimiters: –, -, |, or other common separators
+      const delimiters = ["–", "-", "|", "•"];
+      let parts = [subtitleText]; // Default to single part if no delimiter found
+      let usedDelimiter = null;
 
-      if (parts.length === 2) {
-        const rawFormat = parts[0].toLowerCase();
+      // Find the first delimiter that actually splits the text
+      for (const delimiter of delimiters) {
+        const testParts = subtitleText
+          .split(delimiter)
+          .map((part) => part.trim())
+          .filter((part) => part.length > 0);
+        if (testParts.length > 1) {
+          parts = testParts;
+          usedDelimiter = delimiter;
+          logger.debug(
+            `Split subtitle using delimiter "${delimiter}": ${JSON.stringify(
+              parts
+            )}`
+          );
+          break;
+        }
+      }
 
-        // Determine reading format and extract edition info
-        if (rawFormat.includes("kindle") || rawFormat.includes("ebook")) {
-          readingFormat = "E-Book";
-          editionInfo = parts[0];
-        } else if (
-          rawFormat.includes("hardcover") ||
-          rawFormat.includes("paperback") ||
-          rawFormat.includes("mass market") ||
-          rawFormat.includes("large print")
-        ) {
-          readingFormat = "Physical Book";
-          editionInfo = parts[0];
-        } else if (rawFormat.includes("audiobook")) {
-          readingFormat = "Audiobook";
-          editionFormat = "Audible";
-          editionInfo = "";
-        } else {
-          readingFormat = parts[0]; // fallback
-          editionInfo = "";
+      // Define format detection rules
+      const formatRules = [
+        {
+          keywords: ["kindle", "ebook"],
+          readingFormat: "E-Book",
+          editionFormat: "",
+          preserveEditionInfo: true,
+        },
+        {
+          keywords: ["hardcover", "paperback", "mass market", "large print"],
+          readingFormat: "Physical Book",
+          editionFormat: "",
+          preserveEditionInfo: true,
+        },
+        {
+          keywords: ["audiobook"],
+          readingFormat: "Audiobook",
+          editionFormat: "Audible",
+          preserveEditionInfo: false,
+        },
+      ];
+
+      const parseFormat = (text) => {
+        const lowerText = text.toLowerCase();
+
+        for (const rule of formatRules) {
+          if (rule.keywords.some((keyword) => lowerText.includes(keyword))) {
+            return {
+              readingFormat: rule.readingFormat,
+              editionFormat: rule.editionFormat,
+              editionInfo: rule.preserveEditionInfo ? text : "",
+            };
+          }
         }
 
-        releaseDate = parts[1];
+        // Fallback - no format detected
+        return {
+          readingFormat: "",
+          editionFormat: "",
+          editionInfo: text,
+        };
+      };
+
+      if (parts.length >= 2) {
+        // Multiple parts found - first part is likely format, last part is likely date
+        const formatPart = parts[0];
+        const datePart = parts[parts.length - 1];
+
+        const formatResult = parseFormat(formatPart);
+        readingFormat = formatResult.readingFormat || formatPart; // fallback to raw text
+        editionFormat = formatResult.editionFormat;
+        editionInfo = formatResult.editionInfo;
+
+        // Check if the last part looks like a date
+        if (
+          datePart &&
+          (datePart.match(/\d{4}/) ||
+            datePart.match(/\d{1,2}\/\d{1,2}\/\d{4}/) ||
+            datePart.match(/\w+\s+\d{1,2},?\s+\d{4}/))
+        ) {
+          releaseDate = datePart;
+        }
 
         logger.debug(`Reading format: ${readingFormat}`);
         logger.debug(`Edition info: ${editionInfo}`);
         logger.debug(`Release date: ${releaseDate}`);
-      } else {
-        logger.debug('Subtitle does not contain expected format with "–"');
+      } else if (parts.length === 1) {
+        // Single part - try to extract format info from the whole string
+        const singleText = parts[0];
+        logger.debug(
+          `Single subtitle part, attempting to parse: ${singleText}`
+        );
+
+        const formatResult = parseFormat(singleText);
+        readingFormat = formatResult.readingFormat;
+        editionFormat = formatResult.editionFormat;
+        editionInfo = formatResult.editionInfo;
+
+        if (!readingFormat) {
+          logger.debug("No specific format detected, storing as edition info");
+        }
+
+        logger.debug(`Reading format: ${readingFormat}`);
+        logger.debug(`Edition info: ${editionInfo}`);
       }
     } else if (bindingEl) {
       // Fallback for audiobook layout
       const bindingText = bindingEl.textContent.trim();
       let versionText = versionEl ? versionEl.textContent.trim() : "";
-      versionText = versionText.replace(/^–+\s*/, "");
+
+      // Clean up version text by removing leading dashes and whitespace
+      versionText = versionText.replace(/^[–\-]+\s*/, "");
 
       readingFormat = "Audiobook";
       editionFormat = "Audible";
@@ -1381,280 +1459,259 @@ function parseAmazonProductDetails(data) {
 
   try {
     const readingFormatLower = (data.readingFormat || "").toLowerCase();
-
-    // --- Audible product page (Audiobook format) ---
-    if (
+    const isAudiobook =
       readingFormatLower.includes("audiobook") ||
-      readingFormatLower === "audiobook"
-    ) {
-      const audibleDetailsTable = document.querySelector(
+      readingFormatLower === "audiobook";
+
+    // Get the appropriate container based on format
+    let detailsContainer;
+    let detailItems = [];
+
+    if (isAudiobook) {
+      // --- Audible product page (Audiobook format) ---
+      detailsContainer = document.querySelector(
         "#audibleProductDetails table.a-keyvalue"
       );
-
-      if (audibleDetailsTable) {
-        const rows = audibleDetailsTable.querySelectorAll("tr");
-        rows.forEach((row) => {
-          const header =
-            row.querySelector("th")?.textContent?.trim().toLowerCase() || "";
-          const valueEl = row.querySelector("td");
-          const valueText = valueEl?.textContent?.trim() || "";
-
-          switch (header) {
-            case "best sellers rank":
-              // Skip unneeded rank data
-              logger.debug("Skipping Best Sellers Rank");
-              break;
-
-            case "author":
-              const authors = parseContributorField(header, valueText);
-              logger.debug(`Parsed authors: ${JSON.stringify(authors)}`);
-              if (authors.authors) {
-                data.authors = dedupeObject([
-                  ...(data.authors || []),
-                  ...authors.authors,
-                ]);
-                logger.debug(`Authors added to data: ${data.authors}`);
-              } else {
-                logger.debug("No authors detected");
-              }
-              break;
-
-            case "narrator":
-              const narrator = parseContributorField(header, valueText);
-              logger.debug(`Parsed narrator: ${JSON.stringify(narrator)}`);
-              if (narrator?.contributors?.length) {
-                data.contributors = dedupeObject([
-                  ...(data.contributors || []),
-                  ...narrator.contributors,
-                ]);
-                logger.debug(
-                  `Narrators added to contributors: ${data.contributors}`
-                );
-              } else {
-                logger.debug("No narrators detected");
-              }
-              break;
-
-            case "part of series":
-              if (!data.seriesName) {
-                data.seriesName = valueText;
-                logger.debug(`Series name: ${data.seriesName}`);
-              } else {
-                logger.debug(
-                  `Skipped seriesName: already set: ${data.seriesName}`
-                );
-              }
-              break;
-
-            case "listening length":
-              if (!data.audiobookDuration?.length) {
-                // Extract "X hours Y minutes" style duration
-                const durationParts =
-                  valueText
-                    .toLowerCase()
-                    .match(/\d+\s*hours?|\d+\s*minutes?|\d+\s*seconds?/g) || [];
-                const durationObj = { hours: 0, minutes: 0, seconds: 0 };
-
-                durationParts.forEach((part) => {
-                  if (part.includes("hour"))
-                    durationObj.hours = parseInt(part, 10) || 0;
-                  else if (part.includes("minute"))
-                    durationObj.minutes = parseInt(part, 10) || 0;
-                  else if (part.includes("second"))
-                    durationObj.seconds = parseInt(part, 10) || 0;
-                });
-
-                data.audiobookDuration = [durationObj];
-                logger.debug(
-                  `Audiobook duration: ${JSON.stringify(durationObj)}`
-                );
-              }
-              break;
-
-            case "publisher":
-              if (!data.publisher) {
-                data.publisher = valueText;
-                logger.debug(`Publisher: ${data.publisher}`);
-              } else {
-                logger.debug(
-                  `Skipped publisher: already set: ${data.publisher}`
-                );
-              }
-              break;
-
-            case "program type":
-              if (!data.readingFormat) {
-                data.readingFormat = valueText;
-                logger.debug(
-                  `Reading format (Program Type): ${data.readingFormat}`
-                );
-              } else {
-                logger.debug(
-                  `Skipped readingFormat: already set: ${data.readingFormat}`
-                );
-              }
-              break;
-
-            case "version":
-              if (!data.editionInfo) {
-                data.editionInfo = valueText.replace(/^–+\s*/, "");
-                logger.debug(`Edition info: ${data.editionInfo}`);
-              } else {
-                logger.debug(
-                  `Skipped editionInfo: already set: ${data.editionInfo}`
-                );
-              }
-              break;
-
-            case "language":
-              if (!data.releaseLanguage) {
-                data.releaseLanguage = valueText;
-                logger.debug(`Release language: ${data.releaseLanguage}`);
-              } else {
-                logger.debug(
-                  `Skipped releaseLanguage: already set: ${data.releaseLanguage}`
-                );
-              }
-              break;
-
-            case "asin":
-              
-              if (!data.asin) {
-                data.asin = valueText;
-                logger.debug(`ASIN: ${data.asin}`);
-              } else {
-                logger.debug(`Skipped asin: already set: ${data.asin}`);
-                break;
-              }
-              if (!data.sourceId) {
-                data.sourceId = valueText
-                logger.debug(`Source ID: ${data.sourceId}`);
-              } else {
-                logger.debug(`Skipped source id: already set: ${data.sourceId}`);
-                break;
-              }
-              break;
-
-            default:
-              // Handle "Audible release date" keys
-              if (/^audible\.\w+\s+release date$/i.test(header)) {
-                if (!data.releaseDate) {
-                  data.releaseDate = valueText;
-                  logger.debug(`Release date (Audible): ${data.releaseDate}`);
-                } else {
-                  logger.debug(
-                    `Skipped releaseDate: already set: ${data.releaseDate}`
-                  );
-                }
-              } else {
-                logger.warn(`Unrecognized label: "${header}": "${valueText}"`);
-              }
-              break;
-          }
-        });
-      } else {
-        logger.debug("Audible product details table not found");
+      if (detailsContainer) {
+        const rows = detailsContainer.querySelectorAll("tr");
+        detailItems = Array.from(rows).map((row) => ({
+          label: (
+            row.querySelector("th")?.textContent?.trim() || ""
+          ).toLowerCase(),
+          value: row.querySelector("td")?.textContent?.trim() || "",
+          valueElement: row.querySelector("td"),
+        }));
       }
-    }
-
-    // --- Physical/Ebook product page ---
-    else {
-      const detailBulletsList = document.querySelector(
+    } else {
+      // --- Physical/Ebook product page ---
+      detailsContainer = document.querySelector(
         "#detailBullets_feature_div ul.detail-bullet-list"
       );
+      if (detailsContainer) {
+        const items = detailsContainer.querySelectorAll("li");
+        detailItems = Array.from(items)
+          .map((li) => {
+            const labelEl = li.querySelector("span.a-text-bold");
+            const valueEl = labelEl ? labelEl.nextElementSibling : null;
+            if (!labelEl || !valueEl) return null;
 
-      if (detailBulletsList) {
-        const items = detailBulletsList.querySelectorAll("li");
+            let label = labelEl.textContent || "";
+            label = label
+              .replace(/[‏:\u200E\u200F]/g, "")
+              .trim()
+              .toLowerCase();
 
-        items.forEach((li) => {
-          const labelEl = li.querySelector("span.a-text-bold");
-          const valueEl = labelEl ? labelEl.nextElementSibling : null;
-          if (!labelEl || !valueEl) return;
-
-          let label = labelEl.textContent || "";
-          label = label
-            .replace(/[‏:\u200E\u200F]/g, "")
-            .trim()
-            .toLowerCase();
-          const value = valueEl.textContent.trim();
-
-          logger.debug(`Detail bullet label: "${label}", value: "${value}"`);
-
-          switch (label) {
-            case "publisher":
-              if (!data.publisher) {
-                data.publisher = value;
-                logger.debug(`Publisher: ${data.publisher}`);
-              } else {
-                logger.debug(
-                  `Skipped publisher: already set: ${data.publisher}`
-                );
-              }
-              break;
-
-            case "publication date":
-              if (!data.releaseDate) {
-                data.releaseDate = value;
-                logger.debug(`Release date: ${data.releaseDate}`);
-              } else {
-                logger.debug(
-                  `Skipped releaseDate: already set: ${data.releaseDate}`
-                );
-              }
-              break;
-
-            case "language":
-              if (!data.releaseLanguage) {
-                data.releaseLanguage = value;
-                logger.debug(`Release language: ${data.releaseLanguage}`);
-              } else {
-                logger.debug(
-                  `Skipped releaseLanguage: already set: ${data.releaseLanguage}`
-                );
-              }
-              break;
-
-            case "print length":
-              if (!data.pageCount) {
-                const pageCountMatch = value.match(/\d+/);
-                if (pageCountMatch) {
-                  data.pageCount = parseInt(pageCountMatch[0], 10);
-                  logger.debug(`Page count: ${data.pageCount}`);
-                }
-              } else {
-                logger.debug(
-                  `Skipped pageCount: already set: ${data.pageCount}`
-                );
-              }
-              break;
-
-            case "isbn-10":
-              if (!data.isbn10) {
-                data.isbn10 = value.replace(/-/g, "");
-                logger.debug(`ISBN-10: ${data.isbn10}`);
-              } else {
-                logger.debug(`Skipped ISBN-10: already set: ${data.isbn10}`);
-              }
-              break;
-
-            case "isbn-13":
-              if (!data.isbn13) {
-                data.isbn13 = value.replace(/-/g, "");
-                logger.debug(`ISBN-13: ${data.isbn13}`);
-              } else {
-                logger.debug(`Skipped ISBN-13: already set: ${data.isbn13}`);
-              }
-              break;
-
-            default:
-              logger.warn(`Unrecognized label: "${label}": "${value}"`);
-              break;
-          }
-        });
-      } else {
-        logger.debug("Detail bullets list not found");
+            return {
+              label: label,
+              value: valueEl.textContent.trim(),
+              valueElement: valueEl,
+            };
+          })
+          .filter((item) => item !== null);
       }
     }
+
+    if (!detailsContainer) {
+      logger.debug(
+        `${isAudiobook ? "Audible" : "Detail bullets"} container not found`
+      );
+      return data;
+    }
+
+    // Process all detail items with unified switch statement
+    detailItems.forEach(({ label, value, valueElement }) => {
+      if (!label || !value) return;
+
+      logger.debug(`Processing label: "${label}", value: "${value}"`);
+
+      switch (label) {
+        case "best sellers rank":
+          // Skip unneeded rank data
+          logger.debug("Skipping Best Sellers Rank");
+          break;
+
+        case "author":
+          const authors = parseContributorField(label, value);
+          logger.debug(`Parsed authors: ${JSON.stringify(authors)}`);
+          if (authors.authors) {
+            data.authors = dedupeObject([
+              ...(data.authors || []),
+              ...authors.authors,
+            ]);
+            logger.debug(`Authors added to data: ${data.authors}`);
+          } else {
+            logger.debug("No authors detected");
+          }
+          break;
+
+        case "narrator":
+          const narrator = parseContributorField(label, value);
+          logger.debug(`Parsed narrator: ${JSON.stringify(narrator)}`);
+          if (narrator?.contributors?.length) {
+            data.contributors = dedupeObject([
+              ...(data.contributors || []),
+              ...narrator.contributors,
+            ]);
+            logger.debug(
+              `Narrators added to contributors: ${data.contributors}`
+            );
+          } else {
+            logger.debug("No narrators detected");
+          }
+          break;
+
+        case "part of series":
+          if (!data.seriesName) {
+            data.seriesName = value;
+            logger.debug(`Series name: ${data.seriesName}`);
+          } else {
+            logger.debug(`Skipped seriesName: already set: ${data.seriesName}`);
+          }
+          break;
+
+        case "listening length":
+          if (!data.audiobookDuration?.length) {
+            // Extract "X hours Y minutes" style duration
+            const durationParts =
+              value
+                .toLowerCase()
+                .match(/\d+\s*hours?|\d+\s*minutes?|\d+\s*seconds?/g) || [];
+            const durationObj = { hours: 0, minutes: 0, seconds: 0 };
+
+            durationParts.forEach((part) => {
+              if (part.includes("hour"))
+                durationObj.hours = parseInt(part, 10) || 0;
+              else if (part.includes("minute"))
+                durationObj.minutes = parseInt(part, 10) || 0;
+              else if (part.includes("second"))
+                durationObj.seconds = parseInt(part, 10) || 0;
+            });
+
+            data.audiobookDuration = [durationObj];
+            logger.debug(`Audiobook duration: ${JSON.stringify(durationObj)}`);
+          }
+          break;
+
+        case "publisher":
+        case "publication date":
+          // Handle both "publisher" and "publication date" labels
+          if (label === "publisher") {
+            if (!data.publisher) {
+              data.publisher = value;
+              logger.debug(`Publisher: ${data.publisher}`);
+            } else {
+              logger.debug(`Skipped publisher: already set: ${data.publisher}`);
+            }
+          } else if (label === "publication date") {
+            if (!data.releaseDate) {
+              data.releaseDate = value;
+              logger.debug(`Release date: ${data.releaseDate}`);
+            } else {
+              logger.debug(
+                `Skipped releaseDate: already set: ${data.releaseDate}`
+              );
+            }
+          }
+          break;
+
+        case "program type":
+          if (!data.readingFormat) {
+            data.readingFormat = value;
+            logger.debug(
+              `Reading format (Program Type): ${data.readingFormat}`
+            );
+          } else {
+            logger.debug(
+              `Skipped readingFormat: already set: ${data.readingFormat}`
+            );
+          }
+          break;
+
+        case "version":
+          if (!data.editionInfo) {
+            data.editionInfo = value.replace(/^–+\s*/, "");
+            logger.debug(`Edition info: ${data.editionInfo}`);
+          } else {
+            logger.debug(
+              `Skipped editionInfo: already set: ${data.editionInfo}`
+            );
+          }
+          break;
+
+        case "language":
+          if (!data.releaseLanguage) {
+            data.releaseLanguage = value;
+            logger.debug(`Release language: ${data.releaseLanguage}`);
+          } else {
+            logger.debug(
+              `Skipped releaseLanguage: already set: ${data.releaseLanguage}`
+            );
+          }
+          break;
+
+        case "print length":
+          if (!data.pageCount) {
+            const pageCountMatch = value.match(/\d+/);
+            if (pageCountMatch) {
+              data.pageCount = parseInt(pageCountMatch[0], 10);
+              logger.debug(`Page count: ${data.pageCount}`);
+            }
+          } else {
+            logger.debug(`Skipped pageCount: already set: ${data.pageCount}`);
+          }
+          break;
+
+        case "isbn-10":
+          if (!data.isbn10) {
+            data.isbn10 = value.replace(/-/g, "");
+            logger.debug(`ISBN-10: ${data.isbn10}`);
+          } else {
+            logger.debug(`Skipped ISBN-10: already set: ${data.isbn10}`);
+          }
+          break;
+
+        case "isbn-13":
+          if (!data.isbn13) {
+            data.isbn13 = value.replace(/-/g, "");
+            logger.debug(`ISBN-13: ${data.isbn13}`);
+          } else {
+            logger.debug(`Skipped ISBN-13: already set: ${data.isbn13}`);
+          }
+          break;
+
+        case "asin":
+          if (!data.asin) {
+            data.asin = value;
+            logger.debug(`ASIN: ${data.asin}`);
+          } else {
+            logger.debug(`Skipped asin: already set: ${data.asin}`);
+            break;
+          }
+          if (!data.sourceId) {
+            data.sourceId = value;
+            logger.debug(`Source ID: ${data.sourceId}`);
+          } else {
+            logger.debug(`Skipped source id: already set: ${data.sourceId}`);
+          }
+          break;
+
+        default:
+          // Handle "Audible release date" keys and other dynamic patterns
+          if (/^audible\.\w+\s+release date$/i.test(label)) {
+            if (!data.releaseDate) {
+              data.releaseDate = value;
+              logger.debug(`Release date (Audible): ${data.releaseDate}`);
+            } else {
+              logger.debug(
+                `Skipped releaseDate: already set: ${data.releaseDate}`
+              );
+            }
+          } else {
+            logger.warn(`Unrecognized label: "${label}": "${value}"`);
+          }
+          break;
+      }
+    });
   } catch (error) {
     logger.error(`Error extracting from product details: ${error}`);
   }
