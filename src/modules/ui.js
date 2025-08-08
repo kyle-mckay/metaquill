@@ -348,6 +348,15 @@ function createBookDisplay(data, showMessageFn) {
           : value.join(", ");
     }
 
+    // Limit description to 100 characters
+    if (
+      key === "description" &&
+      typeof value === "string" &&
+      value.length > 100
+    ) {
+      value = value.substring(0, 100) + "... (full description redacted due to length)";
+    }
+
     const div = document.createElement("div");
     div.style.marginBottom = "4px";
 
