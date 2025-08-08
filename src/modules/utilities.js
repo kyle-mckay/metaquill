@@ -290,6 +290,26 @@ function dedupeObject(arr) {
 }
 
 /**
+ * Converts an ISO 639 language code (optionally with region) to its display name.
+ *
+ * @param {string} code - Language code (e.g., 'en', 'pt-BR', 'fr-CA').
+ * @param {string} [locale='en'] - Output language for the display name.
+ * @returns {string} - Full language name (e.g., 'English', 'Portuguese (Brazil)').
+ */
+function getLanguageName(code, locale = 'en') {
+  const logger = createLogger("getLanguageName");
+  logger.debug(`Attempting to normalize language code: ${code}`)
+  try {
+    // Intl.DisplayNames handles both plain language codes and language+region codes
+    const displayNames = new Intl.DisplayNames([locale], { type: 'language' });
+    return displayNames.of(code);
+  } catch {
+    logger.error(`Failed to get language name for code: ${code}`);
+    return ""; // fallback if invalid code
+  }
+}
+
+/**
  * Site-specific modules for detecting and extracting book data.
  * Each module provides:
  * - detect(): returns boolean if the current page matches the site structure.

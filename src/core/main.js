@@ -49,6 +49,8 @@
     ) {
       if (location.pathname.startsWith("/books")) {
         normalizedHost = "google";
+      } else if (host.startsWith("books.google.")) {
+        normalizedHost = "google";
       }
     }
 
