@@ -7,28 +7,45 @@ on:
       - master
     paths-ignore:
       - '.github/**'
+      - 'wiki/**'
   workflow_dispatch:
     inputs:
       branch:
         description: 'Branch to build'
         required: true
         default: 'main'
-  pull_request:
-    types: [opened, reopened, synchronize]
 
 permissions:
   contents: read
 
 jobs:
   update_release_draft:
+    runs-on: ubuntu-latest
+    # Skip if actor is the bot
+    if: github.actor != 'github-actions[bot]'
     permissions:
       contents: write
       pull-requests: write
-    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check commit message for skip flag
+        id: skip_check
+        run: |
+          if git log -1 --pretty=%B | grep -q '\[skip release\]'; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Exit if skip flag set
+        if: steps.skip_check.outputs.skip == 'true'
+        run: |
+          echo "Skipping release drafter due to skip flag."
+          exit 0
+
       - name: Run Release Drafter
+        if: steps.skip_check.outputs.skip != 'true'
         uses: release-drafter/release-drafter@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

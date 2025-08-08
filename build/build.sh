@@ -29,8 +29,15 @@ fi
 version=$(<"$version_file")
 version="${version//[$'\r\n']}"
 
-# Replace log level to INFO in public release
+# Replace log level in public release
 sed -i.bak -E "s|(let currentLogLevel = LogLevel\.)[A-Z]+;|\1${LOG_LEVEL};|" "$header_file"
+
+# If DEBUG build, change @name to include DEV
+if [[ "$LOG_LEVEL" == "DEBUG" ]]; then
+  sed -i.bak -E "s|^(//\s*@name\s+).*|\1MetaQuill DEV|" "$header_file"
+else
+  sed -i.bak -E "s|^(//\s*@name\s+).*|\1MetaQuill|" "$header_file"
+fi
 
 # Replace version in @version line in header file with release draft version number
 sed -i.bak -E "s|^(\\s*//\\s*@version\\s+)[^ ]+|\1$version|" "$header_file"

@@ -24,6 +24,19 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
+      - name: Check commit message for skip pattern
+        id: skip_check
+        run: |
+          if git log -1 --pretty=%B | grep -q 'Build: Update metaquill.user.js'; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Exit early if skip pattern found
+        if: steps.skip_check.outputs.skip == 'true'
+        run: exit 0
+
       - name: Setup Git for pushing
         run: |
           git config user.name "github-actions[bot]"
@@ -32,28 +45,50 @@ jobs:
       - name: Wait 20 seconds
         run: sleep 20
       
-      - name: Wait for Release Drafter to create draft
-        id: wait_for_draft
+      - name: Wait for Release Drafter to finish
+        id: wait_for_rd
         uses: actions/github-script@v6
         with:
-          retries: 20
-          retry-delay-seconds: 6
+          retries: 30
+          retry-delay-seconds: 10
           script: |
-            for (let attempt = 0; attempt < 20; attempt++) {
-              const releases = await github.rest.repos.listReleases({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const workflowName = 'Release Drafter'; // Change if workflow name changes
+            const branch = 'main';
+
+            for (let attempt = 0; attempt < 30; attempt++) {
+              // List workflow runs for the Release Drafter workflow on 'main'
+              const workflows = await github.rest.actions.listRepoWorkflows({
+                owner,
+                repo,
               });
-              const draftRelease = releases.data.find(r => r.draft && r.tag_name);
-              if (draftRelease) {
-                core.info(`Found draft release with tag: ${draftRelease.tag_name}`);
-                core.setOutput("tag", draftRelease.tag_name);
+
+              const rdWorkflow = workflows.data.workflows.find(wf => wf.name === workflowName);
+              if (!rdWorkflow) {
+                core.info(`Workflow '${workflowName}' not found.`);
                 return;
               }
-              core.info("No draft release found yet. Retrying...");
-              await new Promise(resolve => setTimeout(resolve, 6000));
+
+              const runs = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id: rdWorkflow.id,
+                branch,
+                status: 'in_progress',
+              });
+
+              if (runs.data.total_count > 0) {
+                core.info(`Release Drafter is still running (${runs.data.total_count} runs in progress). Waiting...`);
+                await new Promise(r => setTimeout(r, 10000)); // 10 seconds
+              } else {
+                core.info('No running Release Drafter workflow found. Proceeding.');
+                return;
+              }
             }
-            throw new Error("Timed out waiting for draft release with tag");
+
+            throw new Error('Timed out waiting for Release Drafter to finish.');
+
 
 
       - name: Get current release draft tag

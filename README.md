@@ -31,10 +31,7 @@ This userscript is designed to extract detailed book metadata from supported web
 
 >Each source to have its own module
 
-- goodreads.com
-- amazon (.ca/.com/.uk/etc)
-- google (.ca/.com/etc) / books
-- app.thestorygraph.com
+See the [wiki](https://github.com/kyle-mckay/metaquill/wiki/Supported-Sites) for the full list.
 
 ## Usage
 
