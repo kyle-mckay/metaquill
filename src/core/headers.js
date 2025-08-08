@@ -13,6 +13,7 @@
 // @include /^https:\/\/(www\.)?amazon\.[a-z.]+\/dp\/[A-Z0-9]{10}(?:[/?].*)?$/
 // @include /^https:\/\/(www\.)?amazon\.[a-z.]+\/[^\/]+\/dp\/[A-Z0-9]{10}(?:[/?].*)?$/
 // @include /^https:\/\/(www\.)?google\.[a-z.]+\/books(?:[/?].*)?$/
+// @include /^https:\/\/(?:www\.)?books\.google\.[a-z.]+(?:[/?].*)?$/
 // @icon         https://raw.githubusercontent.com/kyle-mckay/metaquill/refs/heads/main/assets/images/icon-128.ico
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -28,6 +29,6 @@ const LogLevel = {
   DEBUG: 3,
 };
 
-let currentLogLevel = LogLevel.INFO; // Change this to control global verbosity
+let currentLogLevel = LogLevel.DEBUG; // Change this to control global verbosity
 let bubbleRefresh = 2000; // The number of miliseconds the bubble refreshes the URL. Allows buttons to show/hide dynamically during normal navigation.
 

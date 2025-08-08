@@ -203,7 +203,7 @@ function mapApiDataToSchema(data, volumeInfo, saleInfo) {
 
   // Language
   if (volumeInfo.language) {
-    data.releaseLanguage = volumeInfo.language;
+    data.releaseLanguage = getLanguageName(volumeInfo.language);
     logger.debug(`API language: ${data.releaseLanguage}`);
   }
 
