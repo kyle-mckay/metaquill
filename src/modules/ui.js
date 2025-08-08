@@ -441,7 +441,9 @@ function createBookDisplay(data, showMessageFn) {
         a.remove();
         URL.revokeObjectURL(url);
       } catch (err) {
-        alert("Failed to download image.");
+        alert(
+          "Failed to download image. This may be due to CORS restrictions if the script is not running from the same website as the image. You may need to save the image manually by right-clicking and selecting 'Save image as...'"
+        );
         logger.error("Image download failed:", err);
       }
     };
