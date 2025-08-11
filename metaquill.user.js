@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/kyle-mckay/metaquill/main/metaquill.user.js
 // @downloadURL  https://raw.githubusercontent.com/kyle-mckay/metaquill/main/metaquill.user.js
 // @author       kyle-mckay
-// @version      1.6.0
+// @version      1.6.1
 // @description  Extract book metadata from supported sites like Goodreads and optionally inject into sites like Hardcovers.app for easier book creation.
 // @match        https://www.goodreads.com/*
 // @match        https://hardcover.app/*
