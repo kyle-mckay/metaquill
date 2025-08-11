@@ -14,7 +14,7 @@
 // @include /^https:\/\/(www\.)?amazon\.[a-z.]+\/[^\/]+\/dp\/[A-Z0-9]{10}(?:[/?].*)?$/
 // @include /^https:\/\/(www\.)?google\.[a-z.]+\/books(?:[/?].*)?$/
 // @include /^https:\/\/(?:www\.)?books\.google\.[a-z.]+(?:[/?].*)?$/
-// @icon         https://raw.githubusercontent.com/kyle-mckay/metaquill/refs/heads/main/assets/icons/icon.svg
+// @icon         https://raw.githubusercontent.com/kyle-mckay/metaquill/refs/heads/main/assets/icons/icon-128.png
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_addStyle
