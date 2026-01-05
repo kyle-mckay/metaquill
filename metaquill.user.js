@@ -216,6 +216,7 @@ function saveBookData(data) {
     const jsonData = JSON.stringify(data);
     logger.debug("Serialized data:", jsonData);
     GM_setValue("bookData", jsonData);
+    GM_setValue("lastExtractionTime", Date.now());
     logger.info("Book data saved successfully.");
   } catch (error) {
     logger.error("Failed to save book data:", error);
@@ -3269,6 +3270,9 @@ function importBookDataToHardcover(data) {
   // Store last URL to detect navigation changes
   let lastUrl = location.href;
 
+  // Store last displayed extraction time to detect data changes from other tabs
+  let lastDisplayedTime = 0;
+
   /**
    * Checks if the current page is a Hardcover import or edit page.
    * Uses a regex to match relevant URL patterns.
@@ -3326,6 +3330,9 @@ function importBookDataToHardcover(data) {
     let savedData = loadBookData();
     let hasSavedData = savedData && Object.keys(savedData).length > 0;
     logger.debug("Saved book data found:", hasSavedData);
+
+    // Update last displayed time for change detection
+    lastDisplayedTime = GM_getValue("lastExtractionTime", 0);
 
     // Load minimized state
     const initialMinimized = GM_getValue("minimized", false);
@@ -3481,14 +3488,32 @@ function importBookDataToHardcover(data) {
    * If URL changes, removes existing bubble and reinitializes UI.
    */
   async function checkUrlChange() {
-    if (location.href !== lastUrl) {
-      lastUrl = location.href;
-      logger.info("URL changed, reinitializing floating bubble.");
-      // Remove existing bubble if present
-      const existingBubble = document.getElementById("floatingBubble");
-      if (existingBubble) existingBubble.remove();
-      // Re-initialize bubble UI
-      await initFloatingBubble();
+    // Only check for changes if the bubble is expanded
+    if (GM_getValue("minimized", false) === false) {
+      const currentExtractionTime = GM_getValue("lastExtractionTime", 0);
+
+      // Check for data changes (e.g., extracted from another tab)
+      if (currentExtractionTime > lastDisplayedTime) {
+        lastDisplayedTime = currentExtractionTime;
+        logger.info("Book data updated, reinitializing floating bubble.");
+        // Remove existing bubble if present
+        const existingBubble = document.getElementById("floatingBubble");
+        if (existingBubble) existingBubble.remove();
+        // Re-initialize bubble UI
+        await initFloatingBubble();
+        return; // Skip URL check since we just reinitialized
+      }
+
+      // Check for URL changes
+      if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        logger.info("URL changed, reinitializing floating bubble.");
+        // Remove existing bubble if present
+        const existingBubble = document.getElementById("floatingBubble");
+        if (existingBubble) existingBubble.remove();
+        // Re-initialize bubble UI
+        await initFloatingBubble();
+      }
     }
   }
 

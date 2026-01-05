@@ -182,6 +182,7 @@ function saveBookData(data) {
     const jsonData = JSON.stringify(data);
     logger.debug("Serialized data:", jsonData);
     GM_setValue("bookData", jsonData);
+    GM_setValue("lastExtractionTime", Date.now());
     logger.info("Book data saved successfully.");
   } catch (error) {
     logger.error("Failed to save book data:", error);
