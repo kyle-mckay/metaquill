@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/kyle-mckay/metaquill/main/metaquill.user.js
 // @downloadURL  https://raw.githubusercontent.com/kyle-mckay/metaquill/main/metaquill.user.js
 // @author       kyle-mckay
-// @version      1.6.1
+// @version      1.7.0
 // @description  Extract book metadata from supported sites like Goodreads and optionally inject into sites like Hardcovers.app for easier book creation.
 // @match        https://www.goodreads.com/*
 // @match        https://hardcover.app/*
@@ -21,6 +21,8 @@
 // @grant        GM_registerMenuCommand
 // @license      MIT
 // ==/UserScript==
+// WARNING: When building from source, do not make changes to `metaquill.users.js`
+// Instead, modify the files inside the `src` directory then from root, run `build/build.sh`
 
 const LogLevel = {
   ERROR: 0,
