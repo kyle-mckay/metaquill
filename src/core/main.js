@@ -68,8 +68,12 @@
     let hasSavedData = savedData && Object.keys(savedData).length > 0;
     logger.debug("Saved book data found:", hasSavedData);
 
+    // Load minimized state
+    const initialMinimized = GM_getValue("minimized", false);
+    const onToggle = (minimized) => GM_setValue("minimized", minimized);
+
     // Create floating bubble UI using UI module
-    const { bubble, content } = UIComponents.createFloatingBubbleUI(logger);
+    const { bubble, content } = UIComponents.createFloatingBubbleUI(logger, onToggle, initialMinimized);
 
     // Message container for displaying temporary feedback to user
     let messageEl = content.querySelector("#floatingBubbleMessage");

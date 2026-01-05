@@ -61,16 +61,16 @@ function log(level, ...args) {
   if (level <= currentLogLevel) {
     switch (level) {
       case LogLevel.ERROR:
-        console.error("[ERROR]", ...args);
+        console.error("[MetaQuill] [ERROR]", ...args);
         break;
       case LogLevel.WARN:
-        console.warn("[WARN]", ...args);
+        console.warn("[MetaQuill] [WARN]", ...args);
         break;
       case LogLevel.INFO:
-        console.info("[ℹINFO]", ...args);
+        console.info("[MetaQuill] [ℹINFO]", ...args);
         break;
       case LogLevel.DEBUG:
-        console.debug("[DEBUG]", ...args);
+        console.debug("[MetaQuill] [DEBUG]", ...args);
         break;
     }
   }
@@ -598,7 +598,7 @@ function addPreviewPanel() {
  * Returns references for bubble, content container, and header.
  * Styling is centralized here for easier future theme toggling.
  */
-function createFloatingBubbleUI(logger, onToggle) {
+function createFloatingBubbleUI(logger, onToggle, initialMinimized = false) {
   const bubble = document.createElement("div");
   bubble.id = "floatingBubble";
   Object.assign(bubble.style, {
@@ -658,6 +658,14 @@ function createFloatingBubbleUI(logger, onToggle) {
   btnContainer.style.gap = "8px";
   btnContainer.style.marginBottom = "8px";
 
+  // Set initial minimized state
+  if (initialMinimized) {
+    content.style.height = "0";
+    content.style.visibility = "hidden";
+    bubble.style.width = "200px";
+    toggleIcon.style.transform = "rotate(180deg)";
+  }
+
   header.onclick = () => {
     if (content.style.visibility === "hidden") {
       // Expand
@@ -674,6 +682,8 @@ function createFloatingBubbleUI(logger, onToggle) {
       toggleIcon.style.transform = "rotate(180deg)"; // arrow down
       logger.debug("Bubble collapsed");
     }
+    const isMinimized = content.style.visibility === "hidden";
+    if (onToggle) onToggle(isMinimized);
   };
 
   bubble.appendChild(header);
@@ -3317,8 +3327,12 @@ function importBookDataToHardcover(data) {
     let hasSavedData = savedData && Object.keys(savedData).length > 0;
     logger.debug("Saved book data found:", hasSavedData);
 
+    // Load minimized state
+    const initialMinimized = GM_getValue("minimized", false);
+    const onToggle = (minimized) => GM_setValue("minimized", minimized);
+
     // Create floating bubble UI using UI module
-    const { bubble, content } = UIComponents.createFloatingBubbleUI(logger);
+    const { bubble, content } = UIComponents.createFloatingBubbleUI(logger, onToggle, initialMinimized);
 
     // Message container for displaying temporary feedback to user
     let messageEl = content.querySelector("#floatingBubbleMessage");

@@ -27,16 +27,16 @@ function log(level, ...args) {
   if (level <= currentLogLevel) {
     switch (level) {
       case LogLevel.ERROR:
-        console.error("[ERROR]", ...args);
+        console.error("[MetaQuill] [ERROR]", ...args);
         break;
       case LogLevel.WARN:
-        console.warn("[WARN]", ...args);
+        console.warn("[MetaQuill] [WARN]", ...args);
         break;
       case LogLevel.INFO:
-        console.info("[ℹINFO]", ...args);
+        console.info("[MetaQuill] [ℹINFO]", ...args);
         break;
       case LogLevel.DEBUG:
-        console.debug("[DEBUG]", ...args);
+        console.debug("[MetaQuill] [DEBUG]", ...args);
         break;
     }
   }

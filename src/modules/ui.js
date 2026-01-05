@@ -148,7 +148,7 @@ function addPreviewPanel() {
  * Returns references for bubble, content container, and header.
  * Styling is centralized here for easier future theme toggling.
  */
-function createFloatingBubbleUI(logger, onToggle) {
+function createFloatingBubbleUI(logger, onToggle, initialMinimized = false) {
   const bubble = document.createElement("div");
   bubble.id = "floatingBubble";
   Object.assign(bubble.style, {
@@ -208,6 +208,14 @@ function createFloatingBubbleUI(logger, onToggle) {
   btnContainer.style.gap = "8px";
   btnContainer.style.marginBottom = "8px";
 
+  // Set initial minimized state
+  if (initialMinimized) {
+    content.style.height = "0";
+    content.style.visibility = "hidden";
+    bubble.style.width = "200px";
+    toggleIcon.style.transform = "rotate(180deg)";
+  }
+
   header.onclick = () => {
     if (content.style.visibility === "hidden") {
       // Expand
@@ -224,6 +232,8 @@ function createFloatingBubbleUI(logger, onToggle) {
       toggleIcon.style.transform = "rotate(180deg)"; // arrow down
       logger.debug("Bubble collapsed");
     }
+    const isMinimized = content.style.visibility === "hidden";
+    if (onToggle) onToggle(isMinimized);
   };
 
   bubble.appendChild(header);
