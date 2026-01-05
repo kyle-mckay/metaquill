@@ -705,7 +705,7 @@ function createFloatingMessage() {
     marginBottom: "8px",
     color: "#007700",
     fontWeight: "bold",
-    minHeight: "18px",
+    minHeight: "21px",
     transition: "opacity 0.3s ease",
     opacity: "0",
     userSelect: "none",
