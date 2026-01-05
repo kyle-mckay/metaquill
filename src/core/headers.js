@@ -21,6 +21,8 @@
 // @grant        GM_registerMenuCommand
 // @license      MIT
 // ==/UserScript==
+// WARNING: When building from source, do not make changes to `metaquill.users.js`
+// Instead, modify the files inside the `src` directory then from root, run `build/build.sh`
 
 const LogLevel = {
   ERROR: 0,

@@ -148,19 +148,25 @@ function addPreviewPanel() {
  * Returns references for bubble, content container, and header.
  * Styling is centralized here for easier future theme toggling.
  */
-function createFloatingBubbleUI(logger, onToggle) {
+function createFloatingBubbleUI(logger, onToggle, initialMinimized = false) {
+  // Load saved position
+  const savedX = GM_getValue("bubbleX", null);
+  const savedY = GM_getValue("bubbleY", null);
+
   const bubble = document.createElement("div");
   bubble.id = "floatingBubble";
   Object.assign(bubble.style, {
     position: "fixed",
-    bottom: "20px",
-    right: "20px",
+    bottom: savedY !== null ? "auto" : "20px",
+    right: savedX !== null ? "auto" : "20px",
+    left: savedX !== null ? `${savedX}px` : "auto",
+    top: savedY !== null ? `${savedY}px` : "auto",
     width: "600px", // expanded width
     background: "#fff",
     border: "1px solid #888",
     borderRadius: "10px",
     boxShadow: "0 4px 10px rgba(0,0,0,0.2)",
-    zIndex: 99999,
+    zIndex: 2147483647, // Maximum z-index value
     fontFamily: "sans-serif",
     fontSize: "14px",
     color: "#222",
@@ -168,6 +174,7 @@ function createFloatingBubbleUI(logger, onToggle) {
     overflow: "hidden",
     transition: "height 0.3s ease, width 0.3s ease, visibility 0.3s ease",
     height: "auto", // start expanded
+    cursor: "move", // indicate draggable
   });
 
   const header = document.createElement("div");
@@ -175,7 +182,7 @@ function createFloatingBubbleUI(logger, onToggle) {
     background: #0055aa;
     color: #fff;
     padding: 8px;
-    cursor: pointer;
+    cursor: default;
     font-weight: bold;
     user-select: none;
     display: flex;
@@ -187,6 +194,7 @@ function createFloatingBubbleUI(logger, onToggle) {
   const toggleIcon = document.createElement("span");
   toggleIcon.textContent = "▼";
   toggleIcon.style.transition = "transform 0.3s ease";
+  toggleIcon.style.cursor = "pointer";
   header.appendChild(toggleIcon);
 
   const content = document.createElement("div");
@@ -200,6 +208,7 @@ function createFloatingBubbleUI(logger, onToggle) {
     visibility: "visible", // start visible
     height: "auto",
     transition: "height 0.3s ease, visibility 0.3s ease",
+    cursor: "move",
   });
 
   const btnContainer = document.createElement("div");
@@ -207,6 +216,120 @@ function createFloatingBubbleUI(logger, onToggle) {
   btnContainer.style.flexWrap = "nowrap";
   btnContainer.style.gap = "8px";
   btnContainer.style.marginBottom = "8px";
+
+  // Set initial minimized state
+  if (initialMinimized) {
+    content.style.height = "0";
+    content.style.visibility = "hidden";
+    bubble.style.width = "200px";
+    toggleIcon.style.transform = "rotate(180deg)";
+  }
+
+  // Drag functionality
+  let isDragging = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let bubbleStartX = 0;
+  let bubbleStartY = 0;
+
+  const startDrag = (e) => {
+    // Don't drag when clicking header, toggle icon, or directly on interactive elements
+    if (e.target === header || e.target === toggleIcon) return;
+
+    // Don't drag if clicking directly on buttons, inputs, links, or other interactive elements
+    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'A') {
+      return;
+    }
+
+    // Don't drag if clicking within the floatingBubbleFlexContainer (book display area)
+    let element = e.target;
+    while (element && element !== bubble) {
+      if (element.classList && element.classList.contains('floatingBubbleFlexContainer')) {
+        return; // Don't start drag
+      }
+      element = element.parentElement;
+    }
+
+    // Allow dragging from bubble background, padding, or non-interactive content areas
+    isDragging = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    const rect = bubble.getBoundingClientRect();
+    bubbleStartX = rect.left;
+    bubbleStartY = rect.top;
+    bubble.style.transition = "none"; // Disable transition during drag
+    bubble.style.cursor = "grabbing";
+    document.addEventListener("mousemove", drag);
+    document.addEventListener("mouseup", endDrag);
+    e.preventDefault();
+  };
+
+  const drag = (e) => {
+    if (!isDragging) return;
+    const deltaX = e.clientX - dragStartX;
+    const deltaY = e.clientY - dragStartY;
+    const newX = Math.max(0, Math.min(window.innerWidth - bubble.offsetWidth, bubbleStartX + deltaX));
+    const newY = Math.max(0, Math.min(window.innerHeight - bubble.offsetHeight, bubbleStartY + deltaY));
+    bubble.style.left = `${newX}px`;
+    bubble.style.top = `${newY}px`;
+    bubble.style.right = "auto";
+    bubble.style.bottom = "auto";
+  };
+
+  const endDrag = () => {
+    if (!isDragging) return;
+    isDragging = false;
+    bubble.style.transition = "height 0.3s ease, width 0.3s ease, visibility 0.3s ease"; // Re-enable transition
+    const rect = bubble.getBoundingClientRect();
+    GM_setValue("bubbleX", rect.left);
+    GM_setValue("bubbleY", rect.top);
+    document.removeEventListener("mousemove", drag);
+    document.removeEventListener("mouseup", endDrag);
+  };
+
+  bubble.addEventListener("mousedown", startDrag);
+
+  // Function to ensure bubble stays within viewport
+  const ensureInViewport = () => {
+    const rect = bubble.getBoundingClientRect();
+    let newX = rect.left;
+    let newY = rect.top;
+    let needsReposition = false;
+
+    // Check if bubble is outside viewport bounds
+    if (rect.right > window.innerWidth) {
+      newX = window.innerWidth - bubble.offsetWidth;
+      needsReposition = true;
+    }
+    if (rect.left < 0) {
+      newX = 0;
+      needsReposition = true;
+    }
+    if (rect.bottom > window.innerHeight) {
+      newY = window.innerHeight - bubble.offsetHeight;
+      needsReposition = true;
+    }
+    if (rect.top < 0) {
+      newY = 0;
+      needsReposition = true;
+    }
+
+    if (needsReposition) {
+      bubble.style.left = `${newX}px`;
+      bubble.style.top = `${newY}px`;
+      bubble.style.right = "auto";
+      bubble.style.bottom = "auto";
+      GM_setValue("bubbleX", newX);
+      GM_setValue("bubbleY", newY);
+      logger.debug("Bubble repositioned to stay in viewport");
+    }
+  };
+
+  // Ensure bubble is in viewport on creation
+  setTimeout(ensureInViewport, 100); // Small delay to ensure DOM is ready
+
+  // Check viewport bounds on window resize
+  window.addEventListener("resize", ensureInViewport);
 
   header.onclick = () => {
     if (content.style.visibility === "hidden") {
@@ -223,7 +346,19 @@ function createFloatingBubbleUI(logger, onToggle) {
       bubble.style.width = "200px"; // collapsed width
       toggleIcon.style.transform = "rotate(180deg)"; // arrow down
       logger.debug("Bubble collapsed");
+
+      // Reset to bottom-right position when minimized
+      setTimeout(() => {
+        bubble.style.left = "auto";
+        bubble.style.top = "auto";
+        bubble.style.right = "20px";
+        bubble.style.bottom = "20px";
+        GM_setValue("bubbleX", null); // Clear saved position
+        GM_setValue("bubbleY", null);
+      }, 310); // Wait for transition to complete
     }
+    const isMinimized = content.style.visibility === "hidden";
+    if (onToggle) onToggle(isMinimized);
   };
 
   bubble.appendChild(header);
@@ -244,7 +379,7 @@ function createFloatingMessage() {
     marginBottom: "8px",
     color: "#007700",
     fontWeight: "bold",
-    minHeight: "18px",
+    minHeight: "21px",
     transition: "opacity 0.3s ease",
     opacity: "0",
     userSelect: "none",
@@ -289,6 +424,7 @@ function createBookDisplay(data, showMessageFn) {
     alignItems: "flex-start",
     maxHeight: "250px",
     overflow: "hidden",
+    cursor: "default",
   });
 
   const prettify = (str) =>

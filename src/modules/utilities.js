@@ -27,16 +27,16 @@ function log(level, ...args) {
   if (level <= currentLogLevel) {
     switch (level) {
       case LogLevel.ERROR:
-        console.error("[ERROR]", ...args);
+        console.error("[MetaQuill] [ERROR]", ...args);
         break;
       case LogLevel.WARN:
-        console.warn("[WARN]", ...args);
+        console.warn("[MetaQuill] [WARN]", ...args);
         break;
       case LogLevel.INFO:
-        console.info("[ℹINFO]", ...args);
+        console.info("[MetaQuill] [ℹINFO]", ...args);
         break;
       case LogLevel.DEBUG:
-        console.debug("[DEBUG]", ...args);
+        console.debug("[MetaQuill] [DEBUG]", ...args);
         break;
     }
   }
@@ -182,6 +182,7 @@ function saveBookData(data) {
     const jsonData = JSON.stringify(data);
     logger.debug("Serialized data:", jsonData);
     GM_setValue("bookData", jsonData);
+    GM_setValue("lastExtractionTime", Date.now());
     logger.info("Book data saved successfully.");
   } catch (error) {
     logger.error("Failed to save book data:", error);
