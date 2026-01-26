@@ -1,3 +1,4 @@
+[![Source on Codeberg](https://img.shields.io/badge/Source-Codeberg-blue?logo=codeberg)](https://codeberg.org/kylemmkay/metaquill)
 
 <img src="./assets/icons/icon-with-text.svg" height="200" alt="# MetaQuill" />
 
