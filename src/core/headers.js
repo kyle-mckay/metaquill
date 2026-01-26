@@ -14,14 +14,14 @@
 // @include /^https:\/\/(www\.)?amazon\.[a-z.]+\/[^\/]+\/dp\/[A-Z0-9]{10}(?:[/?].*)?$/
 // @include /^https:\/\/(www\.)?google\.[a-z.]+\/books(?:[/?].*)?$/
 // @include /^https:\/\/(?:www\.)?books\.google\.[a-z.]+(?:[/?].*)?$/
-// @icon         https://codeberg.org/kylemmkay/metaquill/refs/heads/main/assets/icons/icon-128.png
+// @icon         https://codeberg.org/kylemmkay/metaquill/raw/branch/main/assets/icons/icon-128.png
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
 // @license      MIT
 // ==/UserScript==
-// WARNING: When building from source, do not make changes to `metaquill.users.js`
+// WARNING: When building from source, do not make changes directly to `metaquill.users.js`
 // Instead, modify the files inside the `src` directory then from root, run `build/build.sh`
 
 const LogLevel = {
