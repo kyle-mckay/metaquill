@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         MetaQuill
-// @namespace    https://github.com/kyle-mckay/metaquill
-// @updateURL    https://raw.githubusercontent.com/kyle-mckay/metaquill/main/metaquill.user.js
-// @downloadURL  https://raw.githubusercontent.com/kyle-mckay/metaquill/main/metaquill.user.js
+// @namespace    https://codeberg.org/kylemmkay/metaquill
+// @updateURL    https://codeberg.org/kylemmkay/metaquill/raw/main/metaquill.user.js
+// @downloadURL  https://codeberg.org/kylemmkay/metaquill/raw/main/metaquill.user.js
 // @author       kyle-mckay
-// @version      1.7.0
+// @version      1.7.1
 // @description  Extract book metadata from supported sites like Goodreads and optionally inject into sites like Hardcovers.app for easier book creation.
 // @match        https://www.goodreads.com/*
 // @match        https://hardcover.app/*
@@ -14,7 +14,7 @@
 // @include /^https:\/\/(www\.)?amazon\.[a-z.]+\/[^\/]+\/dp\/[A-Z0-9]{10}(?:[/?].*)?$/
 // @include /^https:\/\/(www\.)?google\.[a-z.]+\/books(?:[/?].*)?$/
 // @include /^https:\/\/(?:www\.)?books\.google\.[a-z.]+(?:[/?].*)?$/
-// @icon         https://raw.githubusercontent.com/kyle-mckay/metaquill/refs/heads/main/assets/icons/icon-128.png
+// @icon         https://codeberg.org/kylemmkay/metaquill/refs/heads/main/assets/icons/icon-128.png
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_addStyle
