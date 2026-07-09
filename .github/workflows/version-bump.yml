@@ -1,0 +1,97 @@
+name: Determine Version, Update Changelog, and Build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'build/release.txt'
+      - 'CHANGELOG.md'
+      - 'metaquill.user.js'
+      - '.github/**'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build'
+        required: true
+        default: 'main'
+        type: string
+
+jobs:
+  release-and-build:
+    # Don't trigger yourself; allow release publish events to force a patch bump
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'release' ||
+      (github.event_name == 'push' && !contains(github.event.head_commit.message, '[release-draft]') && !contains(github.event.head_commit.message, '[release-bump]'))
+    timeout-minutes: 10
+    runs-on: py-runner
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.REPO_PAT }}
+          ref: ${{ github.event.inputs.branch || 'main' }}
+
+      - name: Validate Release Version
+        id: validator
+        env:
+          AUTHOR_NAME: "${{ github.actor }}"
+        run: |
+          set -eo pipefail
+
+          echo "Git Log: $(git log -1)"
+
+          if [[ -z "$AUTHOR_NAME" || "$AUTHOR_NAME" == "***" ]]; then
+            echo ">>> No author found. Fetching author via git log."
+            AUTHOR=$(git log -1 --pretty=%an)
+          else
+            AUTHOR="$AUTHOR_NAME"
+          fi
+
+          echo "Author: $AUTHOR"
+
+          # On release publish, bump version without a changelog entry to prep the next cycle
+          EXTRA_ARGS=()
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo ">>> Release event detected. Forcing a patch bump to prep the next cycle."
+            EXTRA_ARGS=(--post-release)
+          fi
+
+          # run release drafter script (it resolves range/tag directly from git)
+          bash .github/release-drafter.sh -a "$AUTHOR" "${EXTRA_ARGS[@]}" --no-dry-run
+
+          NEW_TAG=$(tr -d '[:space:]' < build/release.txt)
+          echo "final_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+
+      - name: Build userscript
+        run: |
+          chmod +x ./build/build.sh
+          ./build/build.sh
+
+      - name: Commit and push
+        run: |
+          git config user.name "forgejo-actions"
+          git config user.email "actions-user@noreply.codeberg.org"
+          git add build/release.txt CHANGELOG.md src/core/headers.js metaquill.user.js
+
+          if ! git diff --cached --quiet; then
+            COMMIT_TAG="[release-draft]"
+            if [[ "${{ github.event_name }}" == "release" ]]; then
+              COMMIT_TAG="[release-bump]"
+            fi
+            git commit -m "chore: release ${{ steps.validator.outputs.final_tag }} $COMMIT_TAG"
+            if [[ "${{ github.event_name }}" == "release" || "${{ github.ref_name }}" == "main" ]]; then
+              git push origin HEAD:main
+            else
+              BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+              echo "Dry run push:"
+              git push --dry-run origin HEAD:$BRANCH_NAME
+            fi
+          else
+            echo "No changes to commit."
+          fi

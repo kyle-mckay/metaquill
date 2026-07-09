@@ -1,0 +1,104 @@
+name: Draft Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build'
+        required: true
+        default: 'main'
+        type: string
+
+jobs:
+  draft-release:
+    if: |
+      (github.event_name == 'push' && contains(github.event.head_commit.message, '[release-draft]')) ||
+      (github.event_name == 'workflow_dispatch')
+    timeout-minutes: 10
+    runs-on: py-runner
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          token: ${{ secrets.REPO_PAT }}
+
+      - name: Validate Release Version
+        id: validator
+        env:
+          TOKEN: ${{ secrets.REPO_PAT }}
+        run: |
+          set -eo pipefail
+          NEW_TAG="v$(tr -d '[:space:]' < build/release.txt)"
+          if [ -z "$NEW_TAG" ] || [ "$NEW_TAG" = "v" ]; then
+            echo "ERROR: Could not read version from build/release.txt"
+            exit 1
+          fi
+          echo "Extracted tag: $NEW_TAG"
+
+          # Fail if a published (non-draft) release already exists for this tag
+          HTTP_STATUS=$(curl -s -o /tmp/release_check.json -w "%{http_code}" \
+            -H "Authorization: token $TOKEN" \
+            "https://codeberg.org/api/v1/repos/${{ github.repository }}/releases/tags/$NEW_TAG")
+          if [ "$HTTP_STATUS" = "200" ]; then
+            IS_DRAFT=$(jq -r '.draft' /tmp/release_check.json)
+            if [ "$IS_DRAFT" = "false" ]; then
+              echo "ERROR: A published release for $NEW_TAG already exists. Bump the version before drafting."
+              exit 1
+            fi
+            echo "Found existing draft for $NEW_TAG — it will be replaced by the cleanup step."
+          fi
+
+          echo "final_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+
+      - name: Prepare Release Body
+        id: body
+        run: |
+          set -eo pipefail
+          if [ -f "./CHANGELOG.md" ]; then
+            echo "--- Snip of Changelog ---"
+            head -n 10 ./CHANGELOG.md
+            echo "----------------------------"
+            echo "content<<EOF" >> $GITHUB_OUTPUT
+            chmod +x .github/update-changelog.sh
+            .github/update-changelog.sh "changelog" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "content=Automated release for ${{ steps.validator.outputs.final_tag }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Cleanup Old Drafts
+        env:
+          TOKEN: ${{ secrets.REPO_PAT }}
+        run: |
+          echo ">>> Fetching releases..."
+          DRAFT_IDS=$(curl -s -H "Authorization: token $TOKEN" \
+            "https://codeberg.org/api/v1/repos/${{ github.repository }}/releases" \
+            | jq -r '.[] | select(.draft == true) | .id')
+
+          if [ -z "$DRAFT_IDS" ]; then
+            echo ">>> No drafts found to delete."
+          else
+            for ID in $DRAFT_IDS; do
+              echo ">>> Deleting old draft ID: $ID"
+              curl -s -X DELETE -H "Authorization: token $TOKEN" \
+                "https://codeberg.org/api/v1/repos/${{ github.repository }}/releases/$ID"
+            done
+          fi
+
+      - name: Create Draft Release
+        uses: https://gitea.com/actions/gitea-release-action@main
+        with:
+          base_url: https://codeberg.org
+          token: ${{ secrets.REPO_PAT }}
+          tag_name: ${{ steps.validator.outputs.final_tag }}
+          name: "Release ${{ steps.validator.outputs.final_tag }}"
+          draft: true
+          target_commitish: main
+          body: ${{ steps.body.outputs.content }}
