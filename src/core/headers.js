@@ -4,7 +4,7 @@
 // @updateURL    https://codeberg.org/kylemmkay/metaquill/raw/main/metaquill.user.js
 // @downloadURL  https://codeberg.org/kylemmkay/metaquill/raw/main/metaquill.user.js
 // @author       kylemmkay
-// @version      1.8.2
+// @version      1.9.0
 // @description  Extract book metadata from supported sites like Goodreads and optionally inject into sites like Hardcovers.app for easier book creation.
 // @match        https://www.goodreads.com/*
 // @match        https://hardcover.app/*
