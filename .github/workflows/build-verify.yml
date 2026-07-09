@@ -1,0 +1,29 @@
+name: Build Verification
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify-build:
+    runs-on: py-runner
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run build
+        run: |
+          bash build/verify.sh
+          bash build/build.sh
+
+      - name: Fail if build produced uncommitted changes
+        run: |
+          if ! git diff --quiet; then
+            echo "::error::Build output does not match what's committed. Run 'bash build/build.sh' locally (and 'bash build/verify.sh' if build/build_files.list needed updating) and commit the results."
+            git diff --stat
+            exit 1
+          fi
+          echo "Build output matches committed files."
