@@ -150,7 +150,9 @@ async function setComboboxByLabel(labelText, valueText) {
     return;
   }
 
-  button.click();
+  ["pointerdown", "mousedown", "mouseup", "click"].forEach((type) => {
+    button.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+  });
   await new Promise((resolve) => setTimeout(resolve, 100));
 
   const panelId = button.getAttribute("aria-controls");
@@ -218,8 +220,15 @@ async function importBookDataToHardcover(data) {
   setInputId("field-edition-format", data.editionFormat || "");
 
   setInputLabel("Description", data.description || "");
-  setInputLabel("Page Count", data.pageCount);
   setInputLabel("Release Date", toIsoDateString(data.releaseDate));
+
+  await setComboboxByLabel("Primary Language", data.releaseLanguage);
+
+  // Reading Format must be set before Page Count/Duration - Hardcover resets
+  // those fields when the format changes.
+  await setComboboxByLabel("Reading Format", data.readingFormat);
+
+  setInputLabel("Page Count", data.pageCount);
 
   const duration = data.audiobookDuration?.[0];
   if (duration) {
@@ -227,9 +236,6 @@ async function importBookDataToHardcover(data) {
       (duration.hours || 0) * 3600 + (duration.minutes || 0) * 60 + (duration.seconds || 0);
     setInputId("field-audio-length-total-seconds", String(totalSeconds));
   }
-
-  await setComboboxByLabel("Primary Language", data.releaseLanguage);
-  await setComboboxByLabel("Reading Format", data.readingFormat);
 
   logger.info("Finished populating form fields.");
 }
