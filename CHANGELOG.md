@@ -4,6 +4,7 @@
 
 ### Enhancements
 - Add Audible support for any storefront TLD via the Audible catalog API
+- enhance: implement UI changes from #14 (@kylemmkay)
 - feat: add audible.tld support via api (@kylemmkay)
 
 ### Fixes
