@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Cropped pen-nib piece of icon.svg's artwork, normalized to a 0 0 164 240
+     viewBox. Used as the small header glyph in the bubble UI (src/modules/ui.js,
+     MQ_QUILL_GLYPH_SVG) since the full logo doesn't read at small sizes -
+     kept here as a standalone asset for reuse elsewhere. Paths use
+     fill="currentColor" so it inherits text color wherever it's placed;
+     override with an explicit fill if used outside a themed container. -->
+<svg viewBox="0 0 164 240" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(-438,-655)">
+    <path fill="currentColor" d="m537.89,778.41c-.1-8.88-6.62-16.18-15.1-17.53-1-.18-2.02-.25-3.07-.24-1.04.01-2.06.11-3.06.3-8.45,1.53-14.8,8.98-14.7,17.86.1,8.9,6.62,16.2,15.1,17.55l.91,82.34c-10.29-38.78-33.42-73.89-65.9-106.38,21.4-13.54,33-36.57,37.09-66.94,20.35,6.03,40.31,5.74,59.92-.58,4.75,30.23,16.89,52.98,38.54,66.02-31.75,33.2-54.09,68.82-63.52,107.82l-.91-82.34c8.45-1.53,14.8-8.98,14.7-17.88Z"/>
+    <path fill="currentColor" d="m563.02,690.26c-28.59,13.53-57.95,14.15-88.14.98l-.23-20.5c28.52,13.22,57.87,13.38,88.14-.98l.23,20.5Z"/>
+  </g>
+</svg>

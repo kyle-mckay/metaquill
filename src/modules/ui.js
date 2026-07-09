@@ -2,145 +2,411 @@
 // ===== FILE PATH: src/modules/ui.js ==========
 
 /**
- * UI component function to add a floating preview panel ("bubble") to the page.
- *
- * This panel displays stored book metadata in a JSON formatted view on the left,
- * and shows the book cover image with a clickable link and download option on the right.
- *
- * Key behaviors:
- * - Loads book data from persistent storage.
- * - Skips rendering if no valid data or panel already exists.
- * - Creates a fixed-position panel anchored to bottom-left of viewport.
- * - Includes a close button to remove the panel.
- * - Uses monospace font and styled containers for readability.
- * - Excludes the cover URL from JSON preview to reduce clutter.
- * - The cover image opens in a new tab when clicked.
- * - A download link below the cover triggers a save of the image.
- * - All style and DOM creation is done programmatically.
- * - Uses logging to track loading, error, and lifecycle events.
+ * Injects the bubble's scoped stylesheet once per page load.
+ * Uses CSS custom properties for theming so switching themes is a single
+ * attribute/class change rather than rewriting inline styles everywhere.
+ * Scoped entirely under #floatingBubble so nothing leaks onto the host page.
  */
-function addPreviewPanel() {
-  const logger = createLogger("addPreviewPanel");
+let stylesInjected = false;
+function injectBubbleStyles() {
+  if (stylesInjected) return;
+  stylesInjected = true;
+  GM_addStyle(`
+    #floatingBubble[data-mq-theme="dark"],
+    #floatingBubble.mq-auto-dark {
+      --mq-bg: #141b21;
+      --mq-surface: #2e3b47;
+      --mq-border: #3d4c5a;
+      --mq-text: #eef2f5;
+      --mq-text-muted: #9fb0bd;
+      --mq-accent: #00bfff;
+      --mq-accent-2: #00aaff;
+      --mq-accent-3: #0088ff;
+    }
+    #floatingBubble[data-mq-theme="light"],
+    #floatingBubble.mq-auto-light {
+      --mq-bg: #f7f9fb;
+      --mq-surface: #ffffff;
+      --mq-border: #dbe3e9;
+      --mq-text: #2e3b47;
+      --mq-text-muted: #5c6b78;
+      --mq-accent: #00bfff;
+      --mq-accent-2: #00aaff;
+      --mq-accent-3: #0088ff;
+    }
 
-  let data;
+    #floatingBubble.mq-bubble {
+      position: fixed;
+      z-index: 2147483647;
+      background: var(--mq-bg);
+      color: var(--mq-text);
+      border: 1px solid var(--mq-border);
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      user-select: none;
+      box-sizing: border-box;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      width: 460px;
+      min-width: 260px;
+      min-height: 90px;
+      resize: both;
+      /* The native resize grip always renders in the inline-end corner.
+         The bubble docks bottom-right by default, which puts a plain
+         resize handle right in the screen's corner - hard to grab and
+         easy to drag off-screen. Flipping direction moves the grip to
+         the bottom-LEFT instead, away from that corner; children below
+         reset back to ltr so text/layout read normally. */
+      direction: rtl;
+      cursor: move;
+      transition: opacity 0.2s ease;
+    }
+    #floatingBubble .mq-header,
+    #floatingBubble .mq-content,
+    #floatingBubble .mq-settings-panel {
+      direction: ltr;
+    }
+    /* Shape/size snap instantly on collapse - animating width/height/border-radius
+       together is unreliable across repeated toggles and can leave the bubble
+       stuck mid-shape. !important guards against a user's saved custom size
+       (see resize persistence below) overriding the fixed FAB dimensions. */
+    #floatingBubble.mq-bubble.mq-collapsed {
+      width: 48px !important;
+      height: 48px !important;
+      min-width: 0;
+      min-height: 0;
+      border-radius: 50%;
+      resize: none;
+      overflow: hidden;
+    }
+    #floatingBubble.mq-collapsed .mq-content,
+    #floatingBubble.mq-collapsed .mq-title,
+    #floatingBubble.mq-collapsed .mq-header-actions,
+    #floatingBubble.mq-collapsed .mq-toggle {
+      display: none;
+    }
+    #floatingBubble.mq-collapsed .mq-header {
+      height: 48px;
+      padding: 0;
+      justify-content: center;
+      border-radius: 50%;
+      border-bottom: none;
+    }
+
+    #floatingBubble .mq-header {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      /* Fixed dark-ink band (not theme-dependent) so the blue quill glyph
+         always has contrast to sit on - the old blue-on-blue gradient here
+         made the icon nearly invisible. Accent color moves to the underline
+         so the brand blue is still present without swallowing the glyph. */
+      background: linear-gradient(135deg, #2e3b47, #141b21);
+      border-bottom: 2px solid var(--mq-accent-2);
+      color: #eef2f5;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #floatingBubble .mq-glyph {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 26px;
+      flex-shrink: 0;
+    }
+    #floatingBubble .mq-glyph svg { width: 100%; height: 100%; }
+    #floatingBubble .mq-title { flex: 1; white-space: nowrap; }
+    #floatingBubble .mq-header-actions { display: flex; align-items: center; gap: 4px; }
+    #floatingBubble .mq-icon-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+    }
+    #floatingBubble .mq-icon-btn svg { width: 15px; height: 15px; }
+    #floatingBubble .mq-icon-btn:hover { background: rgba(255,255,255,0.15); }
+    #floatingBubble .mq-toggle { transition: transform 0.25s ease; }
+    #floatingBubble.mq-collapsed .mq-toggle { transform: rotate(180deg); }
+
+    #floatingBubble .mq-content {
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      cursor: default;
+    }
+    #floatingBubble .mq-message {
+      margin-bottom: 8px;
+      color: #4ade80;
+      font-weight: bold;
+      min-height: 21px;
+      transition: opacity 0.3s ease;
+      opacity: 0;
+    }
+    #floatingBubble .mq-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      font-size: 14px;
+      border-radius: 6px;
+      border: 1px solid var(--mq-accent-3);
+      background-color: var(--mq-accent-3);
+      color: #fff;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+    #floatingBubble .mq-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+    #floatingBubble .mq-btn:hover:not(:disabled) { background-color: var(--mq-accent-2); }
+    #floatingBubble .mq-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    #floatingBubble .mq-flex-container { display: flex; gap: 12px; align-items: flex-start; max-height: 250px; overflow: hidden; }
+    #floatingBubble .mq-panel-left {
+      flex: 1;
+      background: var(--mq-surface);
+      border: 1px solid var(--mq-border);
+      padding: 8px;
+      border-radius: 8px;
+      max-height: 250px;
+      overflow-y: auto;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 12px;
+    }
+    #floatingBubble .mq-panel-right {
+      width: 150px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      overflow: hidden;
+    }
+    #floatingBubble .mq-kv-label { font-weight: bold; }
+    #floatingBubble .mq-kv-value {
+      cursor: pointer;
+      color: var(--mq-accent);
+      text-decoration: underline;
+    }
+    #floatingBubble .mq-download-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--mq-accent);
+      text-decoration: underline;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    #floatingBubble .mq-download-link svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+    #floatingBubble .mq-settings-panel {
+      position: absolute;
+      top: 46px;
+      right: 8px;
+      width: 220px;
+      background: var(--mq-surface);
+      border: 1px solid var(--mq-border);
+      border-radius: 8px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+      padding: 10px;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 12px;
+      cursor: default;
+      z-index: 1;
+    }
+    #floatingBubble .mq-settings-panel.mq-open { display: flex; }
+    #floatingBubble .mq-settings-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    #floatingBubble .mq-select-wrap { position: relative; display: inline-flex; }
+    #floatingBubble .mq-select-wrap::after {
+      content: "";
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      width: 6px;
+      height: 6px;
+      border-right: 2px solid var(--mq-text-muted);
+      border-bottom: 2px solid var(--mq-text-muted);
+      transform: translateY(-70%) rotate(45deg);
+      pointer-events: none;
+    }
+    #floatingBubble .mq-settings-panel select {
+      /* appearance:none drops the browser's own arrow, which can render
+         near-invisible on a dark background and make the control read as
+         a plain button - the ::after chevron above replaces it reliably. */
+      appearance: none;
+      -webkit-appearance: none;
+      background: var(--mq-bg);
+      color: var(--mq-text);
+      border: 1px solid var(--mq-border);
+      border-radius: 4px;
+      padding: 2px 20px 2px 4px;
+    }
+    #floatingBubble .mq-version-row { color: var(--mq-text-muted); }
+
+    @media (prefers-reduced-motion: reduce) {
+      #floatingBubble, #floatingBubble * { transition: none !important; }
+    }
+  `);
+}
+
+// Faithful copy of assets/icons/icon.svg's artwork (brackets, quill, node),
+// stripped of Inkscape/Sodipodi metadata for inline embedding.
+// The full logo (brackets + feathers) doesn't read at header-glyph size, even
+// the project's own pre-rendered 32px icon is muddy at that scale. This is a
+// tight crop of just the pen-nib piece of the real icon.svg artwork (exact
+// bounding box computed from its path data, not eyeballed), which stays
+// legible small while keeping the same faceted/vector "digitized" look.
+const MQ_QUILL_GLYPH_SVG = `<svg viewBox="438 655 164 240" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <path fill="currentColor" d="m537.89,778.41c-.1-8.88-6.62-16.18-15.1-17.53-1-.18-2.02-.25-3.07-.24-1.04.01-2.06.11-3.06.3-8.45,1.53-14.8,8.98-14.7,17.86.1,8.9,6.62,16.2,15.1,17.55l.91,82.34c-10.29-38.78-33.42-73.89-65.9-106.38,21.4-13.54,33-36.57,37.09-66.94,20.35,6.03,40.31,5.74,59.92-.58,4.75,30.23,16.89,52.98,38.54,66.02-31.75,33.2-54.09,68.82-63.52,107.82l-.91-82.34c8.45-1.53,14.8-8.98,14.7-17.88Z"/>
+  <path fill="currentColor" d="m563.02,690.26c-28.59,13.53-57.95,14.15-88.14.98l-.23-20.5c28.52,13.22,57.87,13.38,88.14-.98l.23,20.5Z"/>
+</svg>`;
+
+// Icons below are Lucide (https://lucide.dev), ISC License, Copyright (c)
+// Lucide Icons and Contributors - "chevron-down" is additionally derived
+// from Feather, MIT License, Copyright (c) 2013-present Cole Bemis. Full
+// license text: assets/lucide/LICENSE. 
+const MQ_ICONS = {
+  scanText: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8h8"/><path d="M7 12h10"/><path d="M7 16h6"/></svg>`,
+  pencilSparkles: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3H8"/><path d="m15.007 5.008 3.987 3.986"/><path d="M20 15v4"/><path d="M21.174 6.813a2.82 2.82 0 0 0-3.986-3.987L3.842 16.175a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="M22 17h-4"/><path d="M4 5v4"/><path d="M6 7H2"/><path d="M9 2v2"/></svg>`,
+  clipboardCopy: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M16 4h2a2 2 0 0 1 2 2v4"/><path d="M21 14H11"/><path d="m15 10-4 4 4 4"/></svg>`,
+  refreshCw: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`,
+  imageDown: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10l-3.1-3.1a2 2 0 0 0-2.814.014L6 21"/><path d="m14 19 3 3v-5.5"/><path d="m17 22 3-3"/><circle cx="9" cy="9" r="2"/></svg>`,
+  settings: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>`,
+  chevronDown: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`,
+};
+
+/**
+ * Reads persisted bubble settings, merged over defaults.
+ * returnToCorner defaults to true to preserve pre-settings-panel behavior.
+ */
+function loadMqSettings() {
+  const defaults = { theme: "dark", returnToCorner: true };
   try {
-    data = loadBookData();
-  } catch (err) {
-    logger.error("Failed to load book data:", err);
-    return;
+    return { ...defaults, ...JSON.parse(GM_getValue("mqSettings", "{}")) };
+  } catch {
+    return defaults;
   }
+}
 
-  if (!data || Object.keys(data).length === 0 || !data.title) {
-    logger.warn("No valid book data to display:", data);
-    return;
-  }
+function saveMqSettings(settings) {
+  GM_setValue("mqSettings", JSON.stringify(settings));
+}
 
-  if (document.getElementById("bookPreviewPanel")) {
-    logger.debug("Preview panel already exists.");
-    return;
-  }
+/**
+ * Snaps the bubble back to its default bottom-right dock and clears the
+ * saved drag position. Shared by the collapse-to-corner behavior and the
+ * settings panel's "Reset position" button.
+ */
+function resetBubblePosition(bubble) {
+  bubble.style.left = "auto";
+  bubble.style.top = "auto";
+  bubble.style.right = "20px";
+  bubble.style.bottom = "20px";
+  GM_setValue("bubbleX", null);
+  GM_setValue("bubbleY", null);
+}
 
-  const panel = document.createElement("div");
-  panel.id = "bookPreviewPanel";
-  Object.assign(panel.style, {
-    position: "fixed",
-    bottom: "10px",
-    left: "10px",
-    width: "600px",
-    maxHeight: "400px",
-    background: "#fdfdfd",
-    border: "1px solid #888",
-    borderRadius: "8px",
-    boxShadow: "0 4px 10px rgba(0, 0, 0, 0.2)",
-    padding: "12px",
-    fontFamily: "monospace",
-    fontSize: "11px",
-    overflowY: "auto",
-    zIndex: 99999,
-    display: "flex",
-    gap: "12px",
-  });
+let mqAutoListenerAdded = false;
 
-  const closeBtn = document.createElement("button");
-  closeBtn.innerText = "✖";
-  Object.assign(closeBtn.style, {
-    position: "absolute",
-    top: "8px",
-    right: "8px",
-    border: "none",
-    background: "transparent",
-    cursor: "pointer",
-    fontSize: "14px",
-  });
-  closeBtn.title = "Close";
-  closeBtn.onclick = () => {
-    logger.debug("Preview panel closed.");
-    panel.remove();
+/**
+ * Applies the given theme to the bubble element, wiring up a live
+ * prefers-color-scheme listener the first time "auto" is used.
+ */
+function applyMqTheme(bubble, theme) {
+  bubble.dataset.mqTheme = theme;
+  bubble.classList.remove("mq-auto-dark", "mq-auto-light");
+  if (theme !== "auto" || typeof window.matchMedia !== "function") return;
+
+  const setAutoClass = () => {
+    const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    bubble.classList.toggle("mq-auto-dark", isDark);
+    bubble.classList.toggle("mq-auto-light", !isDark);
   };
+  setAutoClass();
 
-  // Left pane: JSON preview excluding cover image
-  const jsonPreview = document.createElement("pre");
-  Object.assign(jsonPreview.style, {
-    flex: "1",
-    background: "#eee",
-    padding: "6px",
-    borderRadius: "6px",
-    maxHeight: "380px",
-    overflowY: "auto",
-    whiteSpace: "pre-wrap",
-  });
-  const dataClone = { ...data };
-  delete dataClone.cover; // exclude cover URL from JSON preview
-  jsonPreview.textContent = JSON.stringify(dataClone, null, 2);
-
-  // Right pane: cover image + download link
-  const rightPane = document.createElement("div");
-  Object.assign(rightPane.style, {
-    width: "150px",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: "6px",
-  });
-
-  if (data.cover) {
-    const link = document.createElement("a");
-    link.href = data.cover;
-    link.target = "_blank";
-    link.title = "Open cover image in new tab";
-    link.style.display = "block";
-    link.style.width = "100%";
-
-    const img = document.createElement("img");
-    img.src = data.cover;
-    img.alt = data.title || "Cover Image";
-    img.style.width = "100%";
-    img.style.borderRadius = "6px";
-    img.style.cursor = "pointer";
-
-    link.appendChild(img);
-    rightPane.appendChild(link);
-
-    const downloadLink = document.createElement("a");
-    downloadLink.href = data.cover;
-    downloadLink.download = ""; // filename from URL
-    downloadLink.textContent = "⬇️ Download Cover";
-    Object.assign(downloadLink.style, {
-      color: "#0055aa",
-      textDecoration: "underline",
-      cursor: "pointer",
-      fontSize: "12px",
-      userSelect: "none",
+  if (!mqAutoListenerAdded) {
+    mqAutoListenerAdded = true;
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+      const current = document.getElementById("floatingBubble");
+      if (current && current.dataset.mqTheme === "auto") setAutoClass();
     });
-
-    rightPane.appendChild(downloadLink);
   }
+}
 
-  panel.appendChild(closeBtn);
-  panel.appendChild(jsonPreview);
-  panel.appendChild(rightPane);
-  document.body.appendChild(panel);
-  logger.debug("Preview panel injected.");
+/**
+ * Builds the settings panel (theme, return-to-corner, reset position,
+ * version) and appends it to the bubble as a sibling of
+ * the content area. Returns the panel element and gear toggle button.
+ */
+function createSettingsPanel(bubble, settings) {
+  const panel = document.createElement("div");
+  panel.className = "mq-settings-panel";
+
+  const themeRow = document.createElement("div");
+  themeRow.className = "mq-settings-row";
+  const themeLabel = document.createElement("span");
+  themeLabel.textContent = "Theme";
+  const themeSelect = document.createElement("select");
+  [["dark", "Dark"], ["light", "Light"], ["auto", "Auto"]].forEach(([value, label]) => {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    themeSelect.appendChild(opt);
+  });
+  themeSelect.value = settings.theme;
+  themeSelect.onchange = () => {
+    settings.theme = themeSelect.value;
+    saveMqSettings(settings);
+    applyMqTheme(bubble, settings.theme);
+  };
+  const themeSelectWrap = document.createElement("span");
+  themeSelectWrap.className = "mq-select-wrap";
+  themeSelectWrap.appendChild(themeSelect);
+
+  themeRow.appendChild(themeLabel);
+  themeRow.appendChild(themeSelectWrap);
+
+  const cornerRow = document.createElement("div");
+  cornerRow.className = "mq-settings-row";
+  const cornerLabel = document.createElement("span");
+  cornerLabel.textContent = "Return to corner when minimized";
+  const cornerCheckbox = document.createElement("input");
+  cornerCheckbox.type = "checkbox";
+  cornerCheckbox.checked = settings.returnToCorner;
+  cornerCheckbox.onchange = () => {
+    settings.returnToCorner = cornerCheckbox.checked;
+    saveMqSettings(settings);
+  };
+  cornerRow.appendChild(cornerLabel);
+  cornerRow.appendChild(cornerCheckbox);
+
+  const resetBtn = document.createElement("button");
+  resetBtn.className = "mq-btn";
+  resetBtn.textContent = "Reset position";
+  resetBtn.onclick = () => resetBubblePosition(bubble);
+
+  const versionRow = document.createElement("div");
+  versionRow.className = "mq-version-row";
+  versionRow.textContent = `MetaQuill v${GM_info.script.version}`;
+
+  panel.appendChild(themeRow);
+  panel.appendChild(cornerRow);
+  panel.appendChild(resetBtn);
+  panel.appendChild(versionRow);
+
+  return { panel };
 }
 
 /**
@@ -149,81 +415,86 @@ function addPreviewPanel() {
  * Styling is centralized here for easier future theme toggling.
  */
 function createFloatingBubbleUI(logger, onToggle, initialMinimized = false) {
+  injectBubbleStyles();
+  const settings = loadMqSettings();
+
   // Load saved position
   const savedX = GM_getValue("bubbleX", null);
   const savedY = GM_getValue("bubbleY", null);
 
+  const savedWidth = GM_getValue("bubbleWidth", null);
+  const savedHeight = GM_getValue("bubbleHeight", null);
+
   const bubble = document.createElement("div");
   bubble.id = "floatingBubble";
+  bubble.className = "mq-bubble";
   Object.assign(bubble.style, {
-    position: "fixed",
     bottom: savedY !== null ? "auto" : "20px",
     right: savedX !== null ? "auto" : "20px",
     left: savedX !== null ? `${savedX}px` : "auto",
     top: savedY !== null ? `${savedY}px` : "auto",
-    width: "600px", // expanded width
-    background: "#fff",
-    border: "1px solid #888",
-    borderRadius: "10px",
-    boxShadow: "0 4px 10px rgba(0,0,0,0.2)",
-    zIndex: 2147483647, // Maximum z-index value
-    fontFamily: "sans-serif",
-    fontSize: "14px",
-    color: "#222",
-    userSelect: "none",
-    overflow: "hidden",
-    transition: "height 0.3s ease, width 0.3s ease, visibility 0.3s ease",
-    height: "auto", // start expanded
-    cursor: "move", // indicate draggable
+    width: savedWidth !== null ? `${savedWidth}px` : "",
+    height: savedHeight !== null ? `${savedHeight}px` : "",
   });
+  applyMqTheme(bubble, settings.theme);
+
+  // Persist manual resizes (the `.mq-collapsed` !important rules keep the
+  // FAB circle fixed regardless of whatever size gets saved here).
+  if (typeof ResizeObserver === "function") {
+    let resizeSaveTimer = null;
+    new ResizeObserver(() => {
+      if (bubble.classList.contains("mq-collapsed")) return;
+      clearTimeout(resizeSaveTimer);
+      resizeSaveTimer = setTimeout(() => {
+        GM_setValue("bubbleWidth", bubble.offsetWidth);
+        GM_setValue("bubbleHeight", bubble.offsetHeight);
+      }, 200);
+    }).observe(bubble);
+  }
 
   const header = document.createElement("div");
-  header.style.cssText = `
-    background: #0055aa;
-    color: #fff;
-    padding: 8px;
-    cursor: default;
-    font-weight: bold;
-    user-select: none;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  `;
-  header.textContent = "Book Metadata";
+  header.className = "mq-header";
+
+  const glyph = document.createElement("span");
+  glyph.className = "mq-glyph";
+  glyph.innerHTML = MQ_QUILL_GLYPH_SVG;
+
+  const title = document.createElement("span");
+  title.className = "mq-title";
+  title.textContent = "MetaQuill";
+
+  const actions = document.createElement("span");
+  actions.className = "mq-header-actions";
+
+  const gearBtn = document.createElement("button");
+  gearBtn.className = "mq-icon-btn mq-gear";
+  gearBtn.innerHTML = MQ_ICONS.settings;
+  gearBtn.title = "Settings";
 
   const toggleIcon = document.createElement("span");
-  toggleIcon.textContent = "▼";
-  toggleIcon.style.transition = "transform 0.3s ease";
-  toggleIcon.style.cursor = "pointer";
+  toggleIcon.className = "mq-icon-btn mq-toggle";
+  toggleIcon.innerHTML = MQ_ICONS.chevronDown;
+
+  actions.appendChild(gearBtn);
+  header.appendChild(glyph);
+  header.appendChild(title);
+  // Gear goes last (rightmost) so the settings panel below - which aligns to
+  // the bubble's right edge - sits directly under it instead of the chevron.
   header.appendChild(toggleIcon);
+  header.appendChild(actions);
 
   const content = document.createElement("div");
   content.id = "floatingBubbleContent";
-  Object.assign(content.style, {
-    padding: "8px",
-    display: "flex",
-    flexDirection: "column",
-    maxHeight: "350px",
-    overflowY: "auto",
-    visibility: "visible", // start visible
-    height: "auto",
-    transition: "height 0.3s ease, visibility 0.3s ease",
-    cursor: "move",
-  });
+  content.className = "mq-content";
 
-  const btnContainer = document.createElement("div");
-  btnContainer.style.display = "flex";
-  btnContainer.style.flexWrap = "nowrap";
-  btnContainer.style.gap = "8px";
-  btnContainer.style.marginBottom = "8px";
+  const { panel: settingsPanel } = createSettingsPanel(bubble, settings);
+  gearBtn.onclick = (e) => {
+    e.stopPropagation();
+    settingsPanel.classList.toggle("mq-open");
+  };
 
   // Set initial minimized state
-  if (initialMinimized) {
-    content.style.height = "0";
-    content.style.visibility = "hidden";
-    bubble.style.width = "200px";
-    toggleIcon.style.transform = "rotate(180deg)";
-  }
+  bubble.classList.toggle("mq-collapsed", initialMinimized);
 
   // Drag functionality
   let isDragging = false;
@@ -236,15 +507,22 @@ function createFloatingBubbleUI(logger, onToggle, initialMinimized = false) {
     // Don't drag when clicking header, toggle icon, or directly on interactive elements
     if (e.target === header || e.target === toggleIcon) return;
 
-    // Don't drag if clicking directly on buttons, inputs, links, or other interactive elements
-    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'A') {
+    // Don't drag if clicking directly on buttons, inputs, links, selects, or other interactive elements
+    if (['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A'].includes(e.target.tagName)) {
       return;
     }
 
-    // Don't drag if clicking within the floatingBubbleFlexContainer (book display area)
+    // Don't drag if clicking the native resize handle. It renders in the
+    // bottom-left corner here (see the direction:rtl trick on .mq-bubble).
+    if (!bubble.classList.contains("mq-collapsed")) {
+      const rect = bubble.getBoundingClientRect();
+      if (e.clientX < rect.left + 16 && e.clientY > rect.bottom - 16) return;
+    }
+
+    // Don't drag if clicking within the book display area or settings panel
     let element = e.target;
     while (element && element !== bubble) {
-      if (element.classList && element.classList.contains('floatingBubbleFlexContainer')) {
+      if (element.classList && (element.classList.contains('mq-flex-container') || element.classList.contains('mq-settings-panel'))) {
         return; // Don't start drag
       }
       element = element.parentElement;
@@ -257,7 +535,6 @@ function createFloatingBubbleUI(logger, onToggle, initialMinimized = false) {
     const rect = bubble.getBoundingClientRect();
     bubbleStartX = rect.left;
     bubbleStartY = rect.top;
-    bubble.style.transition = "none"; // Disable transition during drag
     bubble.style.cursor = "grabbing";
     document.addEventListener("mousemove", drag);
     document.addEventListener("mouseup", endDrag);
@@ -279,7 +556,7 @@ function createFloatingBubbleUI(logger, onToggle, initialMinimized = false) {
   const endDrag = () => {
     if (!isDragging) return;
     isDragging = false;
-    bubble.style.transition = "height 0.3s ease, width 0.3s ease, visibility 0.3s ease"; // Re-enable transition
+    bubble.style.cursor = "move";
     const rect = bubble.getBoundingClientRect();
     GM_setValue("bubbleX", rect.left);
     GM_setValue("bubbleY", rect.top);
@@ -331,38 +608,29 @@ function createFloatingBubbleUI(logger, onToggle, initialMinimized = false) {
   // Check viewport bounds on window resize
   window.addEventListener("resize", ensureInViewport);
 
-  header.onclick = () => {
-    if (content.style.visibility === "hidden") {
-      // Expand
-      content.style.visibility = "visible";
-      content.style.height = "auto";
-      bubble.style.width = "600px"; // expanded width
-      toggleIcon.style.transform = "rotate(0deg)"; // arrow up
-      logger.debug("Bubble expanded");
-    } else {
-      // Collapse
-      content.style.height = "0";
-      content.style.visibility = "hidden";
-      bubble.style.width = "200px"; // collapsed width
-      toggleIcon.style.transform = "rotate(180deg)"; // arrow down
-      logger.debug("Bubble collapsed");
+  const setCollapsed = (collapsed) => {
+    bubble.classList.toggle("mq-collapsed", collapsed);
+    settingsPanel.classList.remove("mq-open");
+    logger.debug(collapsed ? "Bubble collapsed" : "Bubble expanded");
 
-      // Reset to bottom-right position when minimized
-      setTimeout(() => {
-        bubble.style.left = "auto";
-        bubble.style.top = "auto";
-        bubble.style.right = "20px";
-        bubble.style.bottom = "20px";
-        GM_setValue("bubbleX", null); // Clear saved position
-        GM_setValue("bubbleY", null);
-      }, 310); // Wait for transition to complete
+    if (collapsed && settings.returnToCorner) {
+      // Wait for the collapse transition to finish before docking to the corner
+      setTimeout(() => resetBubblePosition(bubble), 310);
     }
-    const isMinimized = content.style.visibility === "hidden";
-    if (onToggle) onToggle(isMinimized);
+    if (onToggle) onToggle(collapsed);
+  };
+
+  header.onclick = () => {
+    if (bubble.classList.contains("mq-collapsed")) setCollapsed(false);
+  };
+  toggleIcon.onclick = (e) => {
+    e.stopPropagation();
+    setCollapsed(!bubble.classList.contains("mq-collapsed"));
   };
 
   bubble.appendChild(header);
   bubble.appendChild(content);
+  bubble.appendChild(settingsPanel);
   document.body.appendChild(bubble);
 
   return { bubble, content, header };
@@ -375,15 +643,7 @@ function createFloatingBubbleUI(logger, onToggle, initialMinimized = false) {
 function createFloatingMessage() {
   const msg = document.createElement("div");
   msg.id = "floatingBubbleMessage";
-  Object.assign(msg.style, {
-    marginBottom: "8px",
-    color: "#007700",
-    fontWeight: "bold",
-    minHeight: "21px",
-    transition: "opacity 0.3s ease",
-    opacity: "0",
-    userSelect: "none",
-  });
+  msg.className = "mq-message";
   return msg;
 }
 
@@ -417,15 +677,7 @@ function showMessage(el, msg, duration = 3000) {
 function createBookDisplay(data, showMessageFn) {
   const logger = createLogger("createBookDisplay");
   const container = document.createElement("div");
-  container.className = "floatingBubbleFlexContainer";
-  Object.assign(container.style, {
-    display: "flex",
-    gap: "12px",
-    alignItems: "flex-start",
-    maxHeight: "250px",
-    overflow: "hidden",
-    cursor: "default",
-  });
+  container.className = "mq-flex-container";
 
   const prettify = (str) =>
     str
@@ -435,17 +687,7 @@ function createBookDisplay(data, showMessageFn) {
 
   // Left pane with formatted text
   const left = document.createElement("div");
-  Object.assign(left.style, {
-    flex: "1",
-    background: "#eee",
-    padding: "6px",
-    borderRadius: "6px",
-    maxHeight: "250px",
-    overflowY: "auto",
-    fontFamily: "monospace",
-    fontSize: "12px",
-    userSelect: "none",
-  });
+  left.className = "mq-panel-left";
 
   Object.entries(data).forEach(([key, value]) => {
     const isValidKey = Object.prototype.hasOwnProperty.call(bookSchema, key);
@@ -499,13 +741,11 @@ function createBookDisplay(data, showMessageFn) {
 
     const label = document.createElement("span");
     label.textContent = `${prettify(key)}: `;
-    label.style.fontWeight = "bold";
+    label.className = "mq-kv-label";
 
     const val = document.createElement("span");
     val.textContent = displayValue;
-    val.style.cursor = "pointer";
-    val.style.color = "#0055aa";
-    val.style.textDecoration = "underline";
+    val.className = "mq-kv-value";
     val.title = "Click to copy";
     val.onclick = () => {
       navigator.clipboard.writeText(value).then(() => {
@@ -525,14 +765,7 @@ function createBookDisplay(data, showMessageFn) {
   if (data.cover) {
     const right = document.createElement("div");
     right.id = "imgContainer";
-    Object.assign(right.style, {
-      width: "150px",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      gap: "6px",
-      overflow: "hidden",
-    });
+    right.className = "mq-panel-right";
 
     const link = document.createElement("a");
     link.href = data.cover;
@@ -559,14 +792,9 @@ function createBookDisplay(data, showMessageFn) {
 
     const downloadLink = document.createElement("a");
     downloadLink.href = "#";
-    downloadLink.textContent = "⬇️ Download Cover";
-    Object.assign(downloadLink.style, {
-      color: "#0055aa",
-      textDecoration: "underline",
-      cursor: "pointer",
-      fontSize: "12px",
-      userSelect: "none",
-    });
+    downloadLink.className = "mq-download-link";
+    downloadLink.innerHTML = MQ_ICONS.imageDown;
+    downloadLink.appendChild(document.createTextNode("Download Cover"));
 
     downloadLink.onclick = async (e) => {
       e.preventDefault();
@@ -608,34 +836,23 @@ function createBookDisplay(data, showMessageFn) {
  * @param {object} styles Optional CSS styles as an object
  * @returns {HTMLButtonElement}
  */
-function createButton(label, onClick, styles = {}) {
+function createButton(label, onClick, styles = {}, iconSvg = null) {
   const btn = document.createElement("button");
-  btn.textContent = label;
-  Object.assign(btn.style, {
-    padding: "6px 10px",
-    fontSize: "14px",
-    borderRadius: "4px",
-    border: "1px solid #0077cc",
-    backgroundColor: "#0077cc",
-    color: "#fff",
-    cursor: "pointer",
-    userSelect: "none",
-    transition: "background-color 0.3s ease",
-    ...styles,
-  });
+  btn.className = "mq-btn";
 
-  btn.onmouseenter = () => {
-    btn.style.backgroundColor = "#005fa3";
-  };
-  btn.onmouseleave = () => {
-    btn.style.backgroundColor = "#0077cc";
-  };
+  if (iconSvg) {
+    const icon = document.createElement("span");
+    icon.className = "mq-btn-icon";
+    icon.innerHTML = iconSvg;
+    btn.appendChild(icon);
+  }
+  btn.appendChild(document.createTextNode(label));
+
+  Object.assign(btn.style, styles);
   btn.onclick = onClick;
 
   if (styles.disabled) {
     btn.disabled = true;
-    btn.style.opacity = "0.6";
-    btn.style.cursor = "not-allowed";
   }
 
   return btn;
@@ -643,7 +860,6 @@ function createButton(label, onClick, styles = {}) {
 
 // Export UI component functions for external usage
 const UIComponents = {
-  addPreviewPanel,
   createFloatingBubbleUI,
   createFloatingMessage,
   showMessage,

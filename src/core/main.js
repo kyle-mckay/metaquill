@@ -111,7 +111,7 @@
       logger.debug("Extraction module detected for host:", host);
 
       const extractBtn = UIComponents.createButton(
-        "📚 Extract Book Data",
+        "Extract Book Data",
         async () => {
           logger.info("Extract button clicked");
           const data = await module.extract();
@@ -121,7 +121,8 @@
           showTemporaryMessage("Book data extracted and saved.");
           copyJsonBtn.disabled = false; // enable copy button
         },
-        { marginRight: "8px" }
+        { marginRight: "8px" },
+        MQ_ICONS.scanText
       );
 
       btnContainer.appendChild(extractBtn);
@@ -132,7 +133,7 @@
       logger.debug("Hardcover import page detected");
 
       const importBtn = UIComponents.createButton(
-        "⬇️ Import Book Data",
+        "Import Book Data",
         async () => {
           logger.info("Import button clicked");
           const data = loadBookData();
@@ -147,7 +148,8 @@
           showTemporaryMessage("Book data imported!");
           logger.info("Book data imported into Hardcover");
         },
-        { marginRight: "8px" }
+        { marginRight: "8px" },
+        MQ_ICONS.pencilSparkles
       );
 
       btnContainer.appendChild(importBtn);
@@ -155,7 +157,7 @@
 
     // Button to copy JSON data to clipboard
     const copyJsonBtn = UIComponents.createButton(
-      "📋 Copy JSON",
+      "Copy JSON",
       () => {
         try {
           const jsonStr = JSON.stringify(loadBookData(), null, 2);
@@ -170,13 +172,14 @@
       {
         marginRight: "8px",
         disabled: !hasSavedData,
-      }
+      },
+      MQ_ICONS.clipboardCopy
     );
 
     btnContainer.appendChild(copyJsonBtn);
 
     // Button to refresh displayed book data in bubble
-    const refreshBtn = UIComponents.createButton("🔄 Refresh", () => {
+    const refreshBtn = UIComponents.createButton("Refresh", () => {
       const refreshedData = loadBookData();
       if (refreshedData && Object.keys(refreshedData).length > 0) {
         updateContent(refreshedData);
@@ -189,7 +192,7 @@
         showTemporaryMessage("No book data found.");
         logger.info("No book data on refresh");
       }
-    });
+    }, {}, MQ_ICONS.refreshCw);
 
     btnContainer.appendChild(refreshBtn);
 
@@ -213,7 +216,7 @@
 
       // Remove any existing content container to replace
       const oldFlexContainer = content.querySelector(
-        ".floatingBubbleFlexContainer"
+        ".mq-flex-container"
       );
       if (oldFlexContainer) oldFlexContainer.remove();
 
@@ -222,7 +225,6 @@
         data,
         showTemporaryMessage
       );
-      display.className = "floatingBubbleFlexContainer";
 
       content.appendChild(display);
     }
@@ -268,5 +270,16 @@
   // Poll for URL changes every 2000ms (adjust interval as needed)
   const bubbleRefresh = 2000;
   setInterval(checkUrlChange, bubbleRefresh);
+
+  // Convenience entry point to open the bubble's settings panel from the
+  // userscript manager's menu, in addition to the in-bubble gear icon.
+  GM_registerMenuCommand("MetaQuill Settings", () => {
+    const panel = document.querySelector(".mq-settings-panel");
+    if (panel) {
+      panel.classList.add("mq-open");
+    } else {
+      logger.warn("Settings panel not found - bubble may not be initialized yet");
+    }
+  });
 })();
 
