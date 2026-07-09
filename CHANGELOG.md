@@ -8,6 +8,7 @@
 
 ### Fixes
 - Fix Hardcover edition import: audiobook duration, language, release date, and reading format fields
+- fix: using codeberg author instead of github (@kylemmkay)
 - fix: hardcover reading format field (@kylemmkay)
 - fix: hardcover edition seconds, language and date inputs (@kylemmkay)
 
