@@ -97,6 +97,101 @@ function setInputLabel(labelText, value) {
 }
 
 /**
+ * Converts a loosely-formatted date string (e.g. "May 4, 2021" or an ISO
+ * timestamp) "YYYY-MM-DD" format. Already-ISO strings are sliced directly.
+ *
+ * @param {string} value - The date string to normalize.
+ * @returns {string} - The normalized "YYYY-MM-DD" date, or "" if unparseable.
+ */
+function toIsoDateString(value) {
+  if (!value) return "";
+
+  const isoMatch = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) return isoMatch[1];
+
+  const parsed = new Date(value);
+  if (isNaN(parsed.getTime())) return "";
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Helper: Select an option in a Headless UI combobox/listbox by label text.
+ * Opens the combobox's button, waits for its options to render, then clicks
+ * the option whose text best matches the given value.
+ *
+ * @param {string} labelText - The exact text content of the label.
+ * @param {string} valueText - The option text to select.
+ */
+async function setComboboxByLabel(labelText, valueText) {
+  const logger = createLogger("setComboboxByLabel");
+
+  if (!valueText) {
+    logger.debug(`Skipped '${labelText}' - no value provided`);
+    return;
+  }
+
+  const labels = Array.from(document.querySelectorAll("label"));
+  const label = labels.find((l) => l.textContent.trim() === labelText);
+
+  if (!label) {
+    logger.debug(`Label '${labelText}' not found`);
+    return;
+  }
+
+  const container = label.closest("div.border-t");
+  const button = container?.querySelector('button[aria-haspopup="listbox"]');
+
+  if (!button) {
+    logger.debug(`Combobox button for '${labelText}' not found`);
+    return;
+  }
+
+  button.click();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  const panelId = button.getAttribute("aria-controls");
+  const panel = panelId ? document.getElementById(panelId) : null;
+
+  if (!panel) {
+    logger.warn(`Combobox panel for '${labelText}' did not open`);
+    return;
+  }
+
+  // Type into the panel's search input (if present) to filter the options,
+  // the same way a real user would narrow the list before picking a result.
+  const searchInput = panel.querySelector('input[type="text"]');
+  if (searchInput) {
+    const setter = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(searchInput),
+      "value"
+    )?.set;
+    setter?.call(searchInput, valueText);
+    searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  const options = Array.from(panel.querySelectorAll('[role="option"]'));
+  const target = valueText.trim().toLowerCase();
+  const match =
+    options.find((o) => o.textContent.trim().toLowerCase() === target) ||
+    options.find((o) => o.textContent.trim().toLowerCase().includes(target));
+
+  if (match) {
+    ["pointerdown", "mousedown", "mouseup", "click"].forEach((type) => {
+      match.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+    });
+    logger.debug(`Set '${labelText}' to option: ${match.textContent.trim()}`);
+  } else {
+    logger.warn(`No matching option found for '${labelText}' = "${valueText}"`);
+    button.click(); // close the dropdown again since nothing was selected
+  }
+}
+
+/**
  * Imports extracted book metadata into hardcover.app's book form fields.
  * Uses element IDs and label text to locate input fields.
  * Updates input values and dispatches 'input' and 'change' events
@@ -105,7 +200,7 @@ function setInputLabel(labelText, value) {
  *
  * @param {object} data - Book metadata object to import.
  */
-function importBookDataToHardcover(data) {
+async function importBookDataToHardcover(data) {
   const logger = createLogger("importBookDataToHardcover");
   logger.debug("Called with data:", data);
 
@@ -124,6 +219,17 @@ function importBookDataToHardcover(data) {
 
   setInputLabel("Description", data.description || "");
   setInputLabel("Page Count", data.pageCount);
+  setInputLabel("Release Date", toIsoDateString(data.releaseDate));
+
+  const duration = data.audiobookDuration?.[0];
+  if (duration) {
+    const totalSeconds =
+      (duration.hours || 0) * 3600 + (duration.minutes || 0) * 60 + (duration.seconds || 0);
+    setInputId("field-audio-length-total-seconds", String(totalSeconds));
+  }
+
+  await setComboboxByLabel("Primary Language", data.releaseLanguage);
+  await setComboboxByLabel("Reading Format", data.readingFormat);
 
   logger.info("Finished populating form fields.");
 }
