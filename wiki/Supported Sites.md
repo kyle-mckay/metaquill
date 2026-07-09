@@ -10,8 +10,8 @@ The UI bubble will display when the following pages are loaded or refreshed as p
 | --- | --- | --- | --- |
 | `@match` | `goodreads.com/*` | Yes | No |
 | `@match` | `hardcover.app/*` | No | Yes |
-| `@match` | `audible.ca/*` | No | No |
 | `@match` | `app.thestorygraph.com/books/*` | Yes | No |
+| `@include` | `audible.*/*` | Yes | No |
 | `@include` | `amazon.*/dp/*` | Yes | No |
 | `@include` | `amazon.*/*/dp/*` | Yes | No |
 | `@include` | `google.*/books/*` | Yes | No |

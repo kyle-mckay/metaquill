@@ -485,12 +485,13 @@ function createBookDisplay(data, showMessageFn) {
     }
 
     // Limit description to 100 characters
+    let displayValue = value;
     if (
       key === "description" &&
       typeof value === "string" &&
       value.length > 100
     ) {
-      value = value.substring(0, 100) + "... (full description redacted due to length)";
+      displayValue = value.substring(0, 100) + "... (display truncated, click to copy full text)";
     }
 
     const div = document.createElement("div");
@@ -501,7 +502,7 @@ function createBookDisplay(data, showMessageFn) {
     label.style.fontWeight = "bold";
 
     const val = document.createElement("span");
-    val.textContent = value;
+    val.textContent = displayValue;
     val.style.cursor = "pointer";
     val.style.color = "#0055aa";
     val.style.textDecoration = "underline";

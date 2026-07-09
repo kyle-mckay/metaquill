@@ -2,6 +2,7 @@ src/core/headers.js
 src/modules/utilities.js
 src/modules/ui.js
 src/extractors/amazon.js
+src/extractors/audible.js
 src/extractors/goodreads.js
 src/extractors/googlebooks.js
 src/extractors/storygraph.js

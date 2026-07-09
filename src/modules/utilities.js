@@ -380,6 +380,26 @@ const siteModules = {
       return result;
     },
   },
+  audible: {
+    detect() {
+      const logger = createLogger("siteModules.audible.detect");
+      logger.debug("Running detection on audible");
+
+      const found = Boolean(getAudibleAsin());
+      logger.debug(`Detection result: ${found}`);
+
+      return found;
+    },
+    extract() {
+      const logger = createLogger("siteModules.audible.extract");
+      logger.debug("Calling extractAudible()");
+
+      const result = extractAudible();
+      logger.debug("extractAudible() returned:", result);
+
+      return result;
+    },
+  },
   storygraph: {
     detect() {
       const logger = createLogger("siteModules.storygraph.detect");

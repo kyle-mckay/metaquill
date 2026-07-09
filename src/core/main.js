@@ -21,7 +21,7 @@
   function isHardcoverImportPage() {
     const url = location.href;
     const regex =
-      /^https:\/\/hardcover\.app\/books\/([^/]+\/)?(editions\/[^/]+\/)?edit$|^https:\/\/hardcover\.app\/books\/new_manual$/;
+      /^https:\/\/hardcover\.app\/books\/([^/]+\/)?(editions\/[^/]+\/)?edit$|^https:\/\/hardcover\.app\/books\/new_manual$|^https:\/\/hardcover\.app\/editions\/[^/]+\/edit$/;
     return regex.test(url);
   }
 
@@ -60,6 +60,11 @@
     // Normalize StoryGraph host to 'storygraph'
     if (host.includes("thestorygraph.com")) {
       normalizedHost = "storygraph";
+    }
+
+    // Normalize Audible host to a generic key
+    if (host.includes("audible.")) {
+      normalizedHost = "audible";
     }
 
     logger.debug(`normalizedHost: '${normalizedHost}'`);
@@ -128,7 +133,7 @@
 
       const importBtn = UIComponents.createButton(
         "⬇️ Import Book Data",
-        () => {
+        async () => {
           logger.info("Import button clicked");
           const data = loadBookData();
           if (!data || Object.keys(data).length === 0) {
@@ -138,7 +143,7 @@
             logger.warn("Import attempted with no saved book data");
             return;
           }
-          importBookDataToHardcover(data);
+          await importBookDataToHardcover(data);
           showTemporaryMessage("Book data imported!");
           logger.info("Book data imported into Hardcover");
         },
