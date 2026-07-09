@@ -1,15 +1,23 @@
 # Changelog
 
-## 1.8.2 - 2026-07-08
+## 1.8.2 - 2026-07-09
 
 ### Enhancements
 - Add Audible support for any storefront TLD via the Audible catalog API
+- feat: add audible.tld support via api (@kylemmkay)
 
 ### Fixes
 - Fix Hardcover edition import: audiobook duration, language, release date, and reading format fields
+- fix: hardcover reading format field (@kylemmkay)
+- fix: hardcover edition seconds, language and date inputs (@kylemmkay)
 
 ### Maintenance
 - Prep repository for Codeberg migration and update links/branding
+- chore: add source badge (@kylemmkay)
+- chore: update link after codeberg migration (@kylemmkay)
+- Build: Update metaquill.user.js on push to main (@kylemmkay)
+- chore: prep for codeberg (@kylemmkay)
+- Build: Update metaquill.user.js on push to main (@kylemmkay)
 
 ## 1.7.0 - 2026-01-05
 
@@ -88,3 +96,4 @@
 
 ### Maintenance
 - Initial release of MetaQuill (userscript scaffold, license, README)
+
